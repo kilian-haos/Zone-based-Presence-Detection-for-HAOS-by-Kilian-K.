@@ -1,0 +1,301 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Zone Presence Detection is already set up. Add sensors and change settings via “Configure”."
+    },
+    "error": {
+      "pair_incomplete": "Please provide x and y together.",
+      "same_entity": "x and y must not be the same entity.",
+      "duplicate_entity": "This entity is already used by another target.",
+      "entity_not_found": "Entity not found.",
+      "required_xy": "x and y of target 1 are required."
+    },
+    "step": {
+      "user": {
+        "title": "Set up Zone Presence Detection",
+        "description": "Zone presence detection for radar sensors with position data (e.g. HLK-LD2450 via ESPHome). Draw rooms and zones afterwards in the card or the sidebar panel.",
+        "data": {
+          "add_sensor": "Add a sensor now",
+          "panel": "Show panel in the sidebar",
+          "panel_title": "Panel title"
+        }
+      },
+      "sensor_device": {
+        "title": "Select sensor",
+        "description": "Optionally select the device (e.g. your ESPHome LD2450). Target and presence entities are then suggested automatically.",
+        "data": {
+          "device": "Device (optional)",
+          "name": "Name (optional)"
+        }
+      },
+      "sensor_entities": {
+        "title": "Assign entities",
+        "description": "x and y of target 1 are required. More targets and the presence sensor are optional. While the presence sensor is clear, all targets of this sensor are ignored.",
+        "data": {
+          "name": "Name",
+          "target1_x": "Target 1 – X",
+          "target1_y": "Target 1 – Y",
+          "target2_x": "Target 2 – X",
+          "target2_y": "Target 2 – Y",
+          "target3_x": "Target 3 – X",
+          "target3_y": "Target 3 – Y",
+          "presence": "Presence sensor (optional)",
+          "unit": "Coordinate unit"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "pair_incomplete": "Please provide x and y together.",
+      "same_entity": "x and y must not be the same entity.",
+      "duplicate_entity": "This entity is already used by another target.",
+      "entity_not_found": "Entity not found.",
+      "required_xy": "x and y of target 1 are required.",
+      "confirm_required": "Please confirm the removal.",
+      "invalid_pin": "The PIN must be exactly 4 digits or empty."
+    },
+    "step": {
+      "init": {
+        "title": "Zone Presence Detection",
+        "menu_options": {
+          "add_sensor": "Add sensor",
+          "edit_sensor": "Edit sensor entities",
+          "remove_sensor": "Remove sensor",
+          "settings": "Algorithms & timings",
+          "display": "Display (panel)"
+        }
+      },
+      "add_sensor": {
+        "title": "Add sensor",
+        "description": "Optionally select the device to get the entities suggested. Placement and room are set in the card afterwards.",
+        "data": {
+          "device": "Device (optional)",
+          "name": "Name (optional)"
+        }
+      },
+      "edit_sensor": {
+        "title": "Edit sensor",
+        "data": {
+          "sensor": "Sensor"
+        }
+      },
+      "sensor_entities": {
+        "title": "Assign entities",
+        "description": "x and y of target 1 are required. More targets and the presence sensor are optional.",
+        "data": {
+          "name": "Name",
+          "target1_x": "Target 1 – X",
+          "target1_y": "Target 1 – Y",
+          "target2_x": "Target 2 – X",
+          "target2_y": "Target 2 – Y",
+          "target3_x": "Target 3 – X",
+          "target3_y": "Target 3 – Y",
+          "presence": "Presence sensor (optional)",
+          "unit": "Coordinate unit"
+        }
+      },
+      "remove_sensor": {
+        "title": "Remove sensor",
+        "description": "The sensor and its learned ghost model are removed. Rooms and zones are kept.",
+        "data": {
+          "sensor": "Sensor",
+          "confirm": "Yes, remove"
+        }
+      },
+      "settings": {
+        "title": "Algorithms & timings",
+        "description": "All values apply to the card and the sensors alike.",
+        "data": {
+          "off_delay": "Zone off delay",
+          "confirm_time": "Minimum age of new persons",
+          "stuck_timeout": "Frozen after",
+          "still_delay": "Sitting/lying mode after",
+          "still_radius": "Sitting/lying radius",
+          "tau_move": "Smoothing while moving",
+          "tau_still": "Smoothing while sitting/lying",
+          "zone_exit_margin": "Zone exit margin",
+          "still_exit_margin": "Zone exit margin while sitting/lying",
+          "merge_distance": "Merge multiple sensors up to",
+          "wall_filter": "Reject targets behind walls",
+          "wall_tolerance": "Wall tolerance (snap to wall)",
+          "max_speed": "Maximum walking speed",
+          "ghost_filter": "Learning ghost filter",
+          "ghost_strength": "Ghost filter strength",
+          "learning_speed": "Learning speed",
+          "memory_days": "Memory (half-life)",
+          "cal_max_spread": "Auto alignment: max. spread of measurements"
+        },
+        "data_description": {
+          "off_delay": "How long a zone stays occupied after the last person left. Can be overridden per zone in the card.",
+          "confirm_time": "New stationary detections must persist this long before they count as a person. Moving persons or persons seen by two sensors count earlier.",
+          "stuck_timeout": "If a target does not change at all for this long, it is considered frozen (ESPHome hang) and ignored.",
+          "still_delay": "A person staying inside the radius this long is considered sitting/lying.",
+          "still_radius": "Movements inside this radius are strongly damped in sitting/lying mode.",
+          "tau_move": "Smoothing time constant while walking. Smaller = more direct.",
+          "tau_still": "Smoothing time constant while sitting/lying. Larger = calmer.",
+          "zone_exit_margin": "A person only leaves a zone once this far outside.",
+          "still_exit_margin": "Larger margin for sitting/lying persons – prevents drifting out of the zone.",
+          "merge_distance": "Targets of different sensors within this distance count as one person.",
+          "wall_tolerance": "Slightly outside the room is snapped to the wall, further outside is rejected.",
+          "max_speed": "Faster jumps start a new target (slot switch/reflection).",
+          "ghost_filter": "Scores every detection (age, travel, second sensor, learned ghost map). It can only reject persons, never create them.",
+          "ghost_strength": "Higher = ghost areas are treated more strictly.",
+          "learning_speed": "How fast the model keeps learning during normal operation.",
+          "memory_days": "After this time, knowledge learned during operation is half as strong. The learning calibration does not decay.",
+          "cal_max_spread": "During alignment, sensors whose measurement is further away from the mean are ignored (different target)."
+        }
+      },
+      "display": {
+        "title": "Display",
+        "data": {
+          "panel": "Show panel in the sidebar",
+          "panel_title": "Panel title",
+          "edit_pin": "Edit PIN"
+        },
+        "data_description": {
+          "edit_pin": "4-digit code for edit mode in card and panel. Empty = no PIN (editing is admin-only anyway)."
+        }
+      }
+    }
+  },
+  "selector": {
+    "unit": {
+      "options": {
+        "mm": "Millimeters (LD2450 default)",
+        "cm": "Centimeters",
+        "m": "Meters"
+      }
+    },
+    "learning_speed": {
+      "options": {
+        "slow": "Slow",
+        "normal": "Normal",
+        "fast": "Fast"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "person_count": {
+        "name": "Person count"
+      },
+      "calibration_status": {
+        "name": "Learning calibration",
+        "state": {
+          "idle": "Ready",
+          "scheduled": "Scheduled",
+          "running": "Running",
+          "done": "Done",
+          "disturbed": "Done (disturbed)",
+          "aborted": "Aborted"
+        }
+      },
+      "ghost_rejected": {
+        "name": "Rejected ghost targets"
+      }
+    },
+    "button": {
+      "start_calibration": {
+        "name": "Start learning calibration now"
+      },
+      "abort_calibration": {
+        "name": "Abort learning calibration"
+      },
+      "reset_model": {
+        "name": "Reset learning model"
+      }
+    },
+    "switch": {
+      "calibration_scheduled": {
+        "name": "Learning calibration scheduled"
+      },
+      "learning": {
+        "name": "Continuous learning"
+      }
+    },
+    "number": {
+      "calibration_duration": {
+        "name": "Learning calibration duration"
+      }
+    },
+    "time": {
+      "calibration_time": {
+        "name": "Learning calibration start time"
+      }
+    }
+  },
+  "services": {
+    "start_learning_calibration": {
+      "name": "Start learning calibration",
+      "description": "Starts the ghost filter learning calibration right away. Rooms should be empty meanwhile.",
+      "fields": {
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in minutes (default: configured duration)."
+        }
+      }
+    },
+    "abort_learning_calibration": {
+      "name": "Abort learning calibration",
+      "description": "Aborts a running learning calibration without applying anything."
+    },
+    "schedule_learning_calibration": {
+      "name": "Schedule learning calibration",
+      "description": "Schedules the learning calibration once for the next given time.",
+      "fields": {
+        "time": {
+          "name": "Time",
+          "description": "Start time, e.g. 03:00."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "Duration in minutes."
+        }
+      }
+    },
+    "reset_learning_model": {
+      "name": "Reset learning model",
+      "description": "Deletes everything learned (calibration and continuous learning)."
+    },
+    "import_legacy": {
+      "name": "Import previous package setup",
+      "description": "Imports rooms, zones and sensor calibration from the input_text helpers of the earlier YAML/package setup.",
+      "fields": {
+        "zone_prefix": {
+          "name": "Zone helper prefix",
+          "description": "e.g. input_text.zonen_zone_"
+        },
+        "room_prefix": {
+          "name": "Room helper prefix",
+          "description": "e.g. input_text.zonen_room_"
+        },
+        "cal_prefix": {
+          "name": "Calibration helper prefix",
+          "description": "e.g. input_text.zonen_cal_ (+ lowercase label, e.g. s1)"
+        },
+        "max_zones": {
+          "name": "Number of zone helpers",
+          "description": "How many zone helpers are read."
+        },
+        "max_rooms": {
+          "name": "Number of room helpers",
+          "description": "How many room helpers are read."
+        },
+        "positions": {
+          "name": "Sensor positions",
+          "description": "Positions per sensor label if the calibration has none, e.g. {\"S1\": {\"pos\": [2.25, 0], \"rot\": 0}}."
+        },
+        "replace": {
+          "name": "Replace",
+          "description": "Replace existing rooms and zones."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Zone Presence Detection is not set up or not loaded."
+    }
+  }
+}

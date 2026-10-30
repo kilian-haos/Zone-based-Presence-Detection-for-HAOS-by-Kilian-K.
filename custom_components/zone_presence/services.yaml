@@ -1,0 +1,69 @@
+start_learning_calibration:
+  fields:
+    duration:
+      example: 120
+      selector:
+        number:
+          min: 15
+          max: 480
+          step: 15
+          unit_of_measurement: min
+          mode: box
+
+abort_learning_calibration:
+
+schedule_learning_calibration:
+  fields:
+    time:
+      required: true
+      example: "03:00:00"
+      selector:
+        time:
+    duration:
+      example: 120
+      selector:
+        number:
+          min: 15
+          max: 480
+          step: 15
+          unit_of_measurement: min
+          mode: box
+
+reset_learning_model:
+
+import_legacy:
+  fields:
+    zone_prefix:
+      default: input_text.zonen_zone_
+      selector:
+        text:
+    room_prefix:
+      default: input_text.zonen_room_
+      selector:
+        text:
+    cal_prefix:
+      default: input_text.zonen_cal_
+      selector:
+        text:
+    max_zones:
+      default: 12
+      selector:
+        number:
+          min: 1
+          max: 64
+          mode: box
+    max_rooms:
+      default: 4
+      selector:
+        number:
+          min: 1
+          max: 16
+          mode: box
+    positions:
+      example: '{"S1": {"pos": [2.25, 0], "rot": 0}, "S2": {"pos": [6.6, 0], "rot": 15}}'
+      selector:
+        object:
+    replace:
+      default: true
+      selector:
+        boolean:

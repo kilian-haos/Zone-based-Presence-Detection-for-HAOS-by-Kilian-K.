@@ -1,0 +1,301 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Zone Presence Detection ist bereits eingerichtet. Sensoren und Einstellungen findest du unter „Konfigurieren“."
+    },
+    "error": {
+      "pair_incomplete": "Bitte x und y gemeinsam angeben.",
+      "same_entity": "x und y dürfen nicht dieselbe Entität sein.",
+      "duplicate_entity": "Diese Entität ist bereits einem anderen Target zugeordnet.",
+      "entity_not_found": "Entität nicht gefunden.",
+      "required_xy": "x und y von Target 1 sind Pflicht."
+    },
+    "step": {
+      "user": {
+        "title": "Zone Presence Detection einrichten",
+        "description": "Zonen-Präsenzerkennung für Radarsensoren mit Positionsdaten (z. B. HLK-LD2450 über ESPHome). Räume und Zonen zeichnest du danach in der Karte bzw. im Seitenleisten-Panel.",
+        "data": {
+          "add_sensor": "Jetzt einen Sensor hinzufügen",
+          "panel": "Panel in der Seitenleiste anzeigen",
+          "panel_title": "Titel des Panels"
+        }
+      },
+      "sensor_device": {
+        "title": "Sensor auswählen",
+        "description": "Wähle optional das Gerät (z. B. dein ESPHome-LD2450). Die Target- und Presence-Entitäten werden dann automatisch vorgeschlagen.",
+        "data": {
+          "device": "Gerät (optional)",
+          "name": "Name (optional)"
+        }
+      },
+      "sensor_entities": {
+        "title": "Entitäten zuordnen",
+        "description": "x und y von Target 1 sind Pflicht. Weitere Targets und der Presence-Sensor sind optional. Ist der Presence-Sensor „frei“, werden alle Targets dieses Sensors ignoriert.",
+        "data": {
+          "name": "Name",
+          "target1_x": "Target 1 – X",
+          "target1_y": "Target 1 – Y",
+          "target2_x": "Target 2 – X",
+          "target2_y": "Target 2 – Y",
+          "target3_x": "Target 3 – X",
+          "target3_y": "Target 3 – Y",
+          "presence": "Presence-Sensor (optional)",
+          "unit": "Einheit der Koordinaten"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "pair_incomplete": "Bitte x und y gemeinsam angeben.",
+      "same_entity": "x und y dürfen nicht dieselbe Entität sein.",
+      "duplicate_entity": "Diese Entität ist bereits einem anderen Target zugeordnet.",
+      "entity_not_found": "Entität nicht gefunden.",
+      "required_xy": "x und y von Target 1 sind Pflicht.",
+      "confirm_required": "Bitte das Entfernen bestätigen.",
+      "invalid_pin": "Der PIN muss aus genau 4 Ziffern bestehen oder leer sein."
+    },
+    "step": {
+      "init": {
+        "title": "Zone Presence Detection",
+        "menu_options": {
+          "add_sensor": "Sensor hinzufügen",
+          "edit_sensor": "Sensor-Entitäten bearbeiten",
+          "remove_sensor": "Sensor entfernen",
+          "settings": "Algorithmen & Zeiten",
+          "display": "Darstellung (Panel)"
+        }
+      },
+      "add_sensor": {
+        "title": "Sensor hinzufügen",
+        "description": "Wähle optional das Gerät, dann werden die Entitäten automatisch vorgeschlagen. Platzierung und Raum legst du danach in der Karte fest.",
+        "data": {
+          "device": "Gerät (optional)",
+          "name": "Name (optional)"
+        }
+      },
+      "edit_sensor": {
+        "title": "Sensor bearbeiten",
+        "data": {
+          "sensor": "Sensor"
+        }
+      },
+      "sensor_entities": {
+        "title": "Entitäten zuordnen",
+        "description": "x und y von Target 1 sind Pflicht. Weitere Targets und der Presence-Sensor sind optional.",
+        "data": {
+          "name": "Name",
+          "target1_x": "Target 1 – X",
+          "target1_y": "Target 1 – Y",
+          "target2_x": "Target 2 – X",
+          "target2_y": "Target 2 – Y",
+          "target3_x": "Target 3 – X",
+          "target3_y": "Target 3 – Y",
+          "presence": "Presence-Sensor (optional)",
+          "unit": "Einheit der Koordinaten"
+        }
+      },
+      "remove_sensor": {
+        "title": "Sensor entfernen",
+        "description": "Der Sensor und sein gelerntes Geistermodell werden entfernt. Räume und Zonen bleiben erhalten.",
+        "data": {
+          "sensor": "Sensor",
+          "confirm": "Ja, entfernen"
+        }
+      },
+      "settings": {
+        "title": "Algorithmen & Zeiten",
+        "description": "Alle Werte wirken auf Karte und Sensoren gleichermaßen.",
+        "data": {
+          "off_delay": "Nachlaufzeit der Zonen",
+          "confirm_time": "Mindestdauer neuer Personen",
+          "stuck_timeout": "Eingefroren nach",
+          "still_delay": "Sitz-/Liege-Modus nach",
+          "still_radius": "Sitz-/Liege-Radius",
+          "tau_move": "Glättung in Bewegung",
+          "tau_still": "Glättung im Sitz-/Liege-Modus",
+          "zone_exit_margin": "Zonen-Austrittspuffer",
+          "still_exit_margin": "Zonen-Austrittspuffer im Sitz-/Liege-Modus",
+          "merge_distance": "Zusammenfassen mehrerer Sensoren bis",
+          "wall_filter": "Targets hinter Wänden verwerfen",
+          "wall_tolerance": "Wandtoleranz (an Wand klemmen)",
+          "max_speed": "Maximale Gehgeschwindigkeit",
+          "ghost_filter": "Lernender Geisterfilter",
+          "ghost_strength": "Stärke des Geisterfilters",
+          "learning_speed": "Lerngeschwindigkeit",
+          "memory_days": "Gedächtnis (Halbwertszeit)",
+          "cal_max_spread": "Auto-Abgleich: max. Abstand der Messpunkte"
+        },
+        "data_description": {
+          "off_delay": "So lange bleibt eine Zone nach der letzten Person noch belegt. Pro Zone in der Karte überschreibbar.",
+          "confirm_time": "Neue, ortsfeste Detektionen müssen so lange bestehen, bevor sie als Person gelten. Bewegte oder von zwei Sensoren gesehene Personen gelten früher.",
+          "stuck_timeout": "Ändert sich ein Target so lange gar nicht, gilt es als eingefroren (ESPHome hängt) und wird ignoriert.",
+          "still_delay": "Bleibt eine Person so lange innerhalb des Radius, gilt sie als sitzend/liegend.",
+          "still_radius": "Bewegungen innerhalb dieses Radius werden im Sitz-/Liege-Modus stark gedämpft.",
+          "tau_move": "Zeitkonstante der Glättung beim Gehen. Kleiner = direkter.",
+          "tau_still": "Zeitkonstante der Glättung beim Sitzen/Liegen. Größer = ruhiger.",
+          "zone_exit_margin": "Eine Person verlässt eine Zone erst, wenn sie so weit außerhalb ist.",
+          "still_exit_margin": "Größerer Puffer für sitzende/liegende Personen – verhindert Wegdriften aus der Zone.",
+          "merge_distance": "Targets verschiedener Sensoren innerhalb dieses Abstands gelten als eine Person.",
+          "wall_tolerance": "Knapp außerhalb des Raums wird an die Wand geklemmt, weiter außerhalb verworfen.",
+          "max_speed": "Schnellere Sprünge gelten als neues Target (Slot-Wechsel/Reflexion).",
+          "ghost_filter": "Bewertet jede Detektion (Alter, Weg, zweiter Sensor, gelernte Geisterkarte). Kann Personen nur verwerfen, nie erzeugen.",
+          "ghost_strength": "Höher = Geisterbereiche werden strenger behandelt.",
+          "learning_speed": "Wie schnell das Modell im laufenden Betrieb dazulernt.",
+          "memory_days": "Nach dieser Zeit ist im Betrieb Gelerntes nur noch halb so stark. Die Lernkalibrierung verfällt nicht.",
+          "cal_max_spread": "Beim Abgleich werden Sensoren ignoriert, deren Messpunkt weiter vom Mittel entfernt ist (anderes Ziel)."
+        }
+      },
+      "display": {
+        "title": "Darstellung",
+        "data": {
+          "panel": "Panel in der Seitenleiste anzeigen",
+          "panel_title": "Titel des Panels",
+          "edit_pin": "Bearbeitungs-PIN"
+        },
+        "data_description": {
+          "edit_pin": "4-stelliger Code für den Bearbeiten-Modus in Karte und Panel. Leer = kein PIN (Bearbeiten ist ohnehin nur für Administratoren möglich)."
+        }
+      }
+    }
+  },
+  "selector": {
+    "unit": {
+      "options": {
+        "mm": "Millimeter (LD2450 Standard)",
+        "cm": "Zentimeter",
+        "m": "Meter"
+      }
+    },
+    "learning_speed": {
+      "options": {
+        "slow": "Langsam",
+        "normal": "Normal",
+        "fast": "Schnell"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "person_count": {
+        "name": "Personenanzahl"
+      },
+      "calibration_status": {
+        "name": "Lernkalibrierung",
+        "state": {
+          "idle": "Bereit",
+          "scheduled": "Geplant",
+          "running": "Läuft",
+          "done": "Abgeschlossen",
+          "disturbed": "Abgeschlossen (gestört)",
+          "aborted": "Abgebrochen"
+        }
+      },
+      "ghost_rejected": {
+        "name": "Verworfene Geistertargets"
+      }
+    },
+    "button": {
+      "start_calibration": {
+        "name": "Lernkalibrierung jetzt starten"
+      },
+      "abort_calibration": {
+        "name": "Lernkalibrierung abbrechen"
+      },
+      "reset_model": {
+        "name": "Lernmodell zurücksetzen"
+      }
+    },
+    "switch": {
+      "calibration_scheduled": {
+        "name": "Lernkalibrierung geplant"
+      },
+      "learning": {
+        "name": "Kontinuierliches Lernen"
+      }
+    },
+    "number": {
+      "calibration_duration": {
+        "name": "Dauer Lernkalibrierung"
+      }
+    },
+    "time": {
+      "calibration_time": {
+        "name": "Startzeit Lernkalibrierung"
+      }
+    }
+  },
+  "services": {
+    "start_learning_calibration": {
+      "name": "Lernkalibrierung starten",
+      "description": "Startet sofort die Lernkalibrierung des Geisterfilters. Die Räume sollten währenddessen leer sein.",
+      "fields": {
+        "duration": {
+          "name": "Dauer",
+          "description": "Dauer in Minuten (Standard: eingestellte Dauer)."
+        }
+      }
+    },
+    "abort_learning_calibration": {
+      "name": "Lernkalibrierung abbrechen",
+      "description": "Bricht eine laufende Lernkalibrierung ab, ohne etwas zu übernehmen."
+    },
+    "schedule_learning_calibration": {
+      "name": "Lernkalibrierung planen",
+      "description": "Plant die Lernkalibrierung einmalig für die nächste angegebene Uhrzeit.",
+      "fields": {
+        "time": {
+          "name": "Uhrzeit",
+          "description": "Startzeit, z. B. 03:00."
+        },
+        "duration": {
+          "name": "Dauer",
+          "description": "Dauer in Minuten."
+        }
+      }
+    },
+    "reset_learning_model": {
+      "name": "Lernmodell zurücksetzen",
+      "description": "Löscht alles Gelernte (Kalibrierung und laufendes Lernen)."
+    },
+    "import_legacy": {
+      "name": "Bisherige Package-Lösung importieren",
+      "description": "Übernimmt Räume, Zonen und Sensor-Kalibrierung aus den input_text-Helfern der früheren YAML/Package-Lösung.",
+      "fields": {
+        "zone_prefix": {
+          "name": "Präfix Zonen-Helfer",
+          "description": "z. B. input_text.zonen_zone_"
+        },
+        "room_prefix": {
+          "name": "Präfix Raum-Helfer",
+          "description": "z. B. input_text.zonen_room_"
+        },
+        "cal_prefix": {
+          "name": "Präfix Kalibrier-Helfer",
+          "description": "z. B. input_text.zonen_cal_ (+ Kürzel klein, z. B. s1)"
+        },
+        "max_zones": {
+          "name": "Anzahl Zonen-Helfer",
+          "description": "Wie viele Zonen-Helfer gelesen werden."
+        },
+        "max_rooms": {
+          "name": "Anzahl Raum-Helfer",
+          "description": "Wie viele Raum-Helfer gelesen werden."
+        },
+        "positions": {
+          "name": "Sensor-Positionen",
+          "description": "Positionen je Sensor-Kürzel, falls in der Kalibrierung keine stehen, z. B. {\"S1\": {\"pos\": [2.25, 0], \"rot\": 0}}."
+        },
+        "replace": {
+          "name": "Ersetzen",
+          "description": "Vorhandene Räume und Zonen ersetzen."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Zone Presence Detection ist nicht eingerichtet oder nicht geladen."
+    }
+  }
+}

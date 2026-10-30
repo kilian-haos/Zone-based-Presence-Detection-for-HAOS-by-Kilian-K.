@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zone Presence Harness</title>
+<style>
+  body{ margin:0; padding:16px; background:#0b0c0e; font-family:system-ui; }
+  :root{ --primary-background-color:#0b0c0e; --card-background-color:#17181c; --primary-text-color:#f1f2f4; --secondary-text-color:#868894; }
+</style>
+</head>
+<body>
+<div id="host"></div>
+<script src="../../custom_components/zone_presence/frontend/zone-presence-card.js"></script>
+<script>
+// ---- Simuliertes Backend (gleiches Nachrichtenformat wie die Integration) ----
+window.__ws = [];
+const pip = (x, y, poly) => { let ins = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) ins = !ins; } return ins; };
+const cfg = {
+  entry_id: "e1", pin: "1234", is_admin: true,
+  rooms: [{ id: "r1", name: "Wohn-/Esszimmer", polygon: [[0,0],[7,0],[7,4],[3.45,4],[3.45,5.5],[0,5.5]] },
+          { id: "r2", name: "Büro", polygon: [[0,0],[4,0],[4,3],[0,3]] }],
+  zones: [{ id: "z1", num: 1, room: "r1", name: "Sofa", color: "#a78bfa", enabled: true, points: [[4.2,1.8],[6.6,1.8],[6.6,3.6],[4.2,3.6]], extra: [], off_delay: null },
+          { id: "z3", num: 3, room: "r1", name: "Esstisch", color: "#34d399", enabled: true, points: [[0.6,1.2],[2.8,1.2],[2.8,3.4],[0.6,3.4]], extra: [], off_delay: 20 }],
+  sensors: [
+    { id: "s1", label: "S1", name: "Esszimmer", color: "#38bdf8", room: "r1", pos: [2.25,0], rot: 0, flip_x: 1, flip_y: 1, range: 6, half_angle: 60, offset: { dx: 0.1, dy: 0, dr: 0 }, valid: true,
+      entities: { targets: [{ x: "sensor.ess_target1_x", y: "sensor.ess_target1_y" }], presence: "binary_sensor.ess_presence" } },
+    { id: "s2", label: "S2", name: "Wohnzimmer", color: "#f59e0b", room: "r1", pos: [6.6,0], rot: 15, flip_x: 1, flip_y: 1, range: 6, half_angle: 60, offset: { dx: 0, dy: 0, dr: 0 }, valid: true,
+      entities: { targets: [{ x: "sensor.wz_target1_x", y: "sensor.wz_target1_y" }], presence: null } },
+  ],
+  settings: { off_delay: 10 }, controls: { cal_duration: 120 },
+};
+const subs = new Set();
+let t0 = performance.now();
+function state() {
+  const t = (performance.now() - t0) / 1000;
+  const walker = [1.5 + 3.5 * (0.5 + 0.5 * Math.sin(t / 3)), 2.5];
+  const sitter = [5.2, 2.7];
+  const persons = [
+    { k: "s1:0+s2:0", x: walker[0], y: walker[1], still: false, labels: ["S1T1", "S2T1"], sensors: ["s1", "s2"], room: "r1", conf: 0.95 },
+    { k: "s2:1", x: sitter[0], y: sitter[1], still: true, labels: ["S2T2"], sensors: ["s2"], room: "r1", conf: 0.9 },
+  ];
+  const zones = {};
+  for (const z of cfg.zones) { const n = persons.filter((p) => p.room === z.room && pip(p.x, p.y, z.points)).length; zones[z.id] = { on: n > 0, count: n }; }
+  return { type: "state", persons, zones, rooms: { r1: 2, r2: 0 }, cal: { status: "running", progress: 0.34, next: null },
+    candidates: [{ x: 1.0, y: 4.6, s: "s1", label: "S1T2", conf: 0.22 }], rejected: [{ x: 7.6, y: 2.0, s: "s2", r: "wall" }] };
+}
+function broadcastConfig() { for (const cb of subs) cb({ type: "config", ...JSON.parse(JSON.stringify(cfg)) }); }
+let nextNum = 4;
+const hass = {
+  connection: {
+    subscribeMessage(cb, msg) {
+      window.__ws.push(msg);
+      subs.add(cb);
+      setTimeout(() => { cb({ type: "config", ...JSON.parse(JSON.stringify(cfg)) }); cb(state()); }, 10);
+      const iv = setInterval(() => cb(state()), 100);
+      return Promise.resolve(async () => { subs.delete(cb); clearInterval(iv); });
+    },
+  },
+  async callWS(msg) {
+    window.__ws.push(JSON.parse(JSON.stringify(msg)));
+    if (msg.type === "zone_presence/apply") {
+      if (msg.rooms) cfg.rooms = msg.rooms;
+      if (msg.zones) { cfg.zones = msg.zones.map((z) => ({ ...z, num: z.num || nextNum++ })); }
+      if (msg.sensors) for (const [id, g] of Object.entries(msg.sensors)) Object.assign(cfg.sensors.find((s) => s.id === id), g);
+      if (msg.persist) broadcastConfig();
+      return msg.persist ? cfg : null;
+    }
+    if (msg.type === "zone_presence/auto_calibrate") return { ok: true, sensors: { s1: { dx: 0.15, dy: 0.02 }, s2: { dx: -0.05, dy: 0 } } };
+    if (msg.type === "zone_presence/calibration") return { status: "running", progress: 0 };
+    throw new Error("unbekannt " + msg.type);
+  },
+};
+window.__setPanel = () => {
+  const p = document.createElement("zone-presence-panel");
+  p.narrow = true; p.panel = { title: "Präsenz-Zonen", config: { entry_id: "e1" } }; p.hass = hass;
+  document.getElementById("host").replaceChildren(p);
+};
+const card = document.createElement("zone-presence-card");
+card.setConfig({ title: "Präsenz-Zonen" });
+document.getElementById("host").appendChild(card);
+card.hass = hass;
+window.__card = card;
+window.confirm = () => true;
+window.prompt = (q, d) => (q.startsWith("Raumname") ? "Wohnzimmer neu" : d);
+</script>
+</body>
+</html>
