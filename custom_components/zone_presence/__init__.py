@@ -1,8 +1,9 @@
 """Zone Presence Detection by Kilian K.
 
-Zonen-Präsenzerkennung für mmWave-Radarsensoren mit Positionsdaten (z. B. HLK-LD2450
-über ESPHome): Räume, Zonen, Kalibrierung, Sitz-/Liege-Erkennung und ein lernender
-Geisterfilter – alles serverseitig, mit eigener Dashboard-Karte und Seitenleisten-Panel.
+Zone presence detection for mmWave radar sensors with position data (e.g. HLK-LD2450 via
+ESPHome): rooms, zones, calibration, sitting/lying detection and a learning ghost filter -
+all server-side, with its own dashboard card and sidebar panel. English by default,
+German if Home Assistant runs in German.
 """
 from __future__ import annotations
 
@@ -13,7 +14,8 @@ from pathlib import Path
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.const import EVENT_CORE_CONFIG_UPDATE
+from homeassistant.core import Event, HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 
@@ -23,7 +25,6 @@ from .const import (
     CARD_URL,
     CONF_PANEL,
     CONF_PANEL_TITLE,
-    DEFAULT_PANEL_TITLE,
     DOMAIN,
     FRONTEND_DIR,
     PANEL_COMPONENT,
@@ -31,7 +32,8 @@ from .const import (
     PANEL_URL_PATH,
     PLATFORMS,
 )
-from .runtime import ZonePresenceRuntime
+from .i18n import system_lang, tr
+from .runtime import ZonePresenceRuntime, migrate_options_1_2
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -61,12 +63,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """1.0 -> 1.1: Wandtoleranz-Standard 0,3 -> 1,2 m, keine manuelle Sprache mehr."""
+    if entry.version > 1:
+        return False
+    if entry.minor_version < 2:
+        opts = migrate_options_1_2(entry.options)
+        hass.config_entries.async_update_entry(entry, options=opts, minor_version=2)
+        _LOGGER.info("Zone Presence Detection: Konfiguration auf Version 1.2 migriert")
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ZonePresenceConfigEntry) -> bool:
     runtime = ZonePresenceRuntime(hass, entry)
     await runtime.async_setup()
     entry.runtime_data = runtime
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    @callback
+    def _on_core_config(_event: Event) -> None:
+        # Systemsprache geändert -> Gerätemodelle, Standardnamen, Panel-Titel neu setzen
+        if system_lang(hass) != runtime.lang:
+            hass.config_entries.async_schedule_reload(entry.entry_id)
+
+    entry.async_on_unload(hass.bus.async_listen(EVENT_CORE_CONFIG_UPDATE, _on_core_config))
     if entry.options.get(CONF_PANEL, True):
         await _async_register_panel(hass, entry)
     return True
@@ -78,7 +99,7 @@ async def _async_register_panel(hass: HomeAssistant, entry: ConfigEntry) -> None
         hass,
         frontend_url_path=PANEL_URL_PATH,
         webcomponent_name=PANEL_COMPONENT,
-        sidebar_title=entry.options.get(CONF_PANEL_TITLE) or DEFAULT_PANEL_TITLE,
+        sidebar_title=entry.options.get(CONF_PANEL_TITLE) or tr(system_lang(hass), "panel_title"),
         sidebar_icon=PANEL_ICON,
         module_url=hass.data.get(DATA_CARD_URL, CARD_URL),
         require_admin=False,

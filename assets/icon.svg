@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16262a"/>
+      <stop offset="1" stop-color="#0a1012"/>
+    </linearGradient>
+    <radialGradient id="cone" cx="128" cy="214" r="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2fd6b0" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#2fd6b0" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#2fd6b0" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#2fd6b0" stop-opacity="0.7"/>
+      <stop offset="1" stop-color="#2fd6b0" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile"><rect x="8" y="8" width="240" height="240" rx="56"/></clipPath>
+  </defs>
+
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#bg)"/>
+  <g clip-path="url(#tile)">
+    <!-- Radar-Kegel (symmetrisch um x=128) -->
+    <path d="M128 214 L-6 52 A200 200 0 0 1 262 52 Z" fill="url(#cone)"/>
+    <g fill="none" stroke="#2fd6b0" stroke-linecap="round" stroke-width="7">
+      <path d="M89.00 179.68 A52 52 0 0 1 167.00 179.68" stroke-opacity="0.85"/>
+      <path d="M62.00 155.92 A88 88 0 0 1 194.00 155.92" stroke-opacity="0.55"/>
+      <path d="M35.00 132.16 A124 124 0 0 1 221.00 132.16" stroke-opacity="0.3"/>
+    </g>
+    <!-- Zone: gleichmäßige, runde Striche -->
+    <path d="M128 20 H153.0 A17 17 0 0 1 170.0 37 V53 A17 17 0 0 1 153.0 70 H103.0 A17 17 0 0 1 86.0 53 V37 A17 17 0 0 1 103.0 20 Z" fill="#a78bfa" fill-opacity="0.2"/>
+    <path d="M128 20 H153.0 A17 17 0 0 1 170.0 37 V53 A17 17 0 0 1 153.0 70 H103.0 A17 17 0 0 1 86.0 53 V37 A17 17 0 0 1 103.0 20 Z" fill="none" stroke="#a78bfa" stroke-width="5.5" stroke-linecap="round"
+          pathLength="100" stroke-dasharray="3.1667 5.1667" stroke-dashoffset="1.5833"/>
+    <!-- Person -->
+    <circle cx="128" cy="45.0" r="26" fill="url(#glow)"/>
+    <circle cx="128" cy="45.0" r="12" fill="#2fd6b0" stroke="#e9fffa" stroke-width="3" stroke-opacity="0.9"/>
+  </g>
+  <!-- Sensor -->
+  <rect x="100" y="206" width="56" height="20" rx="10" fill="#2fd6b0"/>
+  <circle cx="128" cy="216" r="4.5" fill="#0a1012"/>
+  <rect x="8.5" y="8.5" width="239" height="239" rx="55.5" fill="none" stroke="#ffffff" stroke-opacity="0.06"/>
+</svg>

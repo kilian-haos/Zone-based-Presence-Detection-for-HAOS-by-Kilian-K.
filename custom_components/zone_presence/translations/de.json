@@ -18,6 +18,9 @@
           "add_sensor": "Jetzt einen Sensor hinzufügen",
           "panel": "Panel in der Seitenleiste anzeigen",
           "panel_title": "Titel des Panels"
+        },
+        "data_description": {
+          "panel_title": "Leer = Standardtitel („Präsenz-Zonen“ bei deutschem Home Assistant, sonst „Zone Presence“)."
         }
       },
       "sensor_device": {
@@ -63,7 +66,7 @@
           "edit_sensor": "Sensor-Entitäten bearbeiten",
           "remove_sensor": "Sensor entfernen",
           "settings": "Algorithmen & Zeiten",
-          "display": "Darstellung (Panel)"
+          "display": "Darstellung & Bearbeiten"
         }
       },
       "add_sensor": {
@@ -147,14 +150,27 @@
         }
       },
       "display": {
-        "title": "Darstellung",
+        "title": "Darstellung & Bearbeiten",
         "data": {
           "panel": "Panel in der Seitenleiste anzeigen",
-          "panel_title": "Titel des Panels",
-          "edit_pin": "Bearbeitungs-PIN"
+          "panel_title": "Titel des Panels"
         },
         "data_description": {
-          "edit_pin": "4-stelliger Code für den Bearbeiten-Modus in Karte und Panel. Leer = kein PIN (Bearbeiten ist ohnehin nur für Administratoren möglich)."
+          "panel_title": "Leer = Standardtitel („Präsenz-Zonen“ bei deutschem Home Assistant, sonst „Zone Presence“)."
+        },
+        "sections": {
+          "editing": {
+            "name": "Bearbeiten in Karte und Panel",
+            "description": "**Der PIN ist nur aktiv, wenn das Feld eine Eingabe enthält** (4 Ziffern). Leer = kein PIN.\n\n⚠️ Ist **„Bearbeiten auch für Nicht-Administratoren erlauben“** angehakt, ist dieser PIN das Einzige, was vor ungewollten Eingriffen schützt. Mit dieser Anhakung wird ein PIN dringend empfohlen.",
+            "data": {
+              "edit_pin": "Bearbeitungs-PIN",
+              "allow_user_edit": "Bearbeiten auch für Nicht-Administratoren erlauben"
+            },
+            "data_description": {
+              "edit_pin": "Leer lassen = kein PIN.",
+              "allow_user_edit": "Ohne Haken können nur Administratoren Räume, Zonen, Sensoren und Kalibrierung ändern. Mit Haken alle Benutzer – dann unbedingt einen PIN setzen."
+            }
+          }
         }
       }
     }

@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 DOMAIN = "zone_presence"
 NAME = "Zone Presence Detection by Kilian K."
 MANUFACTURER = "Kilian K."
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -34,8 +34,8 @@ CONF_SETTINGS = "settings"
 CONF_PANEL = "panel"
 CONF_PANEL_TITLE = "panel_title"
 CONF_PIN = "edit_pin"
-DEFAULT_PANEL_TITLE = "Präsenz-Zonen"
-DEFAULT_PIN = "1234"
+CONF_ALLOW_USER_EDIT = "allow_user_edit"
+DEFAULT_PIN = ""  # PIN standardmäßig aus
 
 # Laufzeit
 TICK_INTERVAL = 0.25        # s Zeitbasis für Timeouts/Glättung

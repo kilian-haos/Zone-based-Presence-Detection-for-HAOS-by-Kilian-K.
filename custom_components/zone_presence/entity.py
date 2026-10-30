@@ -1,4 +1,4 @@
-"""Basisklassen der Entitäten."""
+"""Entity base classes."""
 from __future__ import annotations
 
 from homeassistant.core import callback
@@ -29,7 +29,7 @@ class HubEntity(ZPEntity):
         self._attr_translation_key = key
         self._attr_device_info = DeviceInfo(
             identifiers={runtime.hub_device_id}, name="Zone Presence Detection",
-            manufacturer=MANUFACTURER, model="Hub", sw_version=VERSION,
+            manufacturer=MANUFACTURER, model=runtime.t("model_hub"), sw_version=VERSION,
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
@@ -54,7 +54,7 @@ class ZoneEntity(ZPEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={runtime.zone_device_id(zone_id)},
             name=z.display_name if z else f"Zone {zone_id}",
-            manufacturer=MANUFACTURER, model="Präsenzzone", **runtime.via_kwargs(via),
+            manufacturer=MANUFACTURER, model=runtime.t("model_zone"), **runtime.via_kwargs(via),
         )
 
     @property
@@ -81,7 +81,7 @@ class RoomEntity(ZPEntity):
         r = runtime.engine.rooms.get(room_id)
         self._attr_device_info = DeviceInfo(
             identifiers={runtime.room_device_id(room_id)}, name=r.name if r else room_id,
-            manufacturer=MANUFACTURER, model="Raum", **runtime.via_kwargs(runtime.hub_device_id),
+            manufacturer=MANUFACTURER, model=runtime.t("model_room"), **runtime.via_kwargs(runtime.hub_device_id),
         )
 
     @property

@@ -52,6 +52,7 @@ def install() -> None:
 
     const.Platform = Platform
     const.EVENT_HOMEASSISTANT_STOP = "homeassistant_stop"
+    const.EVENT_CORE_CONFIG_UPDATE = "core_config_updated"
 
     core = _mod("homeassistant.core")
     core.callback = lambda f: f
@@ -224,11 +225,25 @@ class FakeServices:
         self.calls.append((domain, service, data))
 
 
+class FakeConfig:
+    def __init__(self, language: str = "en") -> None:
+        self.language = language
+
+
+class FakeUser:
+    def __init__(self, is_admin: bool) -> None:
+        self.is_admin = is_admin
+
+
 class FakeHass:
-    def __init__(self) -> None:
+    def __init__(self, language: str = "en") -> None:
+        self.config = FakeConfig(language)
         self.states = FakeStates()
         self.bus = FakeBus()
         self.data: dict = {}
+
+    async def async_add_executor_job(self, func, *args):
+        return func(*args)
 
 
 class FakeEntry:

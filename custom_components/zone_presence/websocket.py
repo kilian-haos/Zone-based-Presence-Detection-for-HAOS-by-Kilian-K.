@@ -1,4 +1,8 @@
-"""Websocket-API für Karte und Panel."""
+"""Websocket-API für Karte und Panel.
+
+Ändernde Befehle: Administratoren, oder alle Benutzer, wenn „Bearbeiten auch für
+Nicht-Administratoren erlauben“ gesetzt ist (dann schützt nur noch der PIN).
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -26,7 +30,25 @@ def get_runtime(hass: HomeAssistant, entry_id: str | None = None) -> ZonePresenc
 
 
 def _not_found(connection: websocket_api.ActiveConnection, msg_id: int) -> None:
-    connection.send_error(msg_id, "not_found", "Zone Presence Detection ist nicht eingerichtet oder nicht geladen")
+    connection.send_error(msg_id, "not_found", "Zone Presence Detection is not set up or not loaded")
+
+
+def _editable_runtime(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> ZonePresenceRuntime | None:
+    """Runtime für ändernde Befehle: Admins oder – falls freigegeben – alle Benutzer."""
+    rt = get_runtime(hass, msg.get("entry_id"))
+    if rt is None:
+        _not_found(connection, msg["id"])
+        return None
+    if not rt.can_edit(connection.user):
+        connection.send_error(msg["id"], websocket_api.ERR_UNAUTHORIZED, "Editing is not allowed for this user")
+        return None
+    return rt
+
+
+def _rights(rt: ZonePresenceRuntime, connection: websocket_api.ActiveConnection) -> dict[str, bool]:
+    return {"is_admin": bool(connection.user and connection.user.is_admin), "can_edit": rt.can_edit(connection.user)}
 
 
 @callback
@@ -42,7 +64,7 @@ def ws_config(hass: HomeAssistant, connection: websocket_api.ActiveConnection, m
     if rt is None:
         _not_found(connection, msg["id"])
         return
-    connection.send_result(msg["id"], {**rt.config_payload(), "is_admin": bool(connection.user and connection.user.is_admin)})
+    connection.send_result(msg["id"], {**rt.config_payload(), **_rights(rt, connection)})
 
 
 @websocket_api.websocket_command(
@@ -59,12 +81,12 @@ def ws_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection
         _not_found(connection, msg["id"])
         return
     msg_id = msg["id"]
-    is_admin = bool(connection.user and connection.user.is_admin)
 
     @callback
     def send(payload: dict) -> None:
         if payload.get("type") == "config":
-            payload = {**payload, "is_admin": is_admin}
+            # Rechte bei jeder Konfiguration neu bestimmen (Option kann sich ändern)
+            payload = {**payload, **_rights(rt, connection)}
         connection.send_message(websocket_api.event_message(msg_id, payload))
 
     connection.subscriptions[msg_id] = rt.subscribe(send, msg["debug"])
@@ -72,7 +94,6 @@ def ws_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection
     rt.send_initial(send)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/apply",
@@ -85,9 +106,8 @@ def ws_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection
 )
 @callback
 def ws_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    rt = get_runtime(hass, msg.get("entry_id"))
+    rt = _editable_runtime(hass, connection, msg)
     if rt is None:
-        _not_found(connection, msg["id"])
         return
     payload = {k: msg[k] for k in ("rooms", "zones", "sensors") if k in msg}
     try:
@@ -98,20 +118,17 @@ def ws_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     connection.send_result(msg["id"], cfg if msg["persist"] else None)
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): f"{DOMAIN}/auto_calibrate", vol.Optional("entry_id"): str, vol.Required("room_id"): str}
 )
 @callback
 def ws_auto_calibrate(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    rt = get_runtime(hass, msg.get("entry_id"))
+    rt = _editable_runtime(hass, connection, msg)
     if rt is None:
-        _not_found(connection, msg["id"])
         return
     connection.send_result(msg["id"], rt.auto_calibrate(msg["room_id"]))
 
 
-@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/calibration",
@@ -122,9 +139,8 @@ def ws_auto_calibrate(hass: HomeAssistant, connection: websocket_api.ActiveConne
 )
 @callback
 def ws_calibration(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
-    rt = get_runtime(hass, msg.get("entry_id"))
+    rt = _editable_runtime(hass, connection, msg)
     if rt is None:
-        _not_found(connection, msg["id"])
         return
     if msg["action"] == "start":
         rt.start_calibration(msg.get("duration"))

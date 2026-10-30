@@ -16,8 +16,9 @@
 // ---- Simuliertes Backend (gleiches Nachrichtenformat wie die Integration) ----
 window.__ws = [];
 const pip = (x, y, poly) => { let ins = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi) ins = !ins; } return ins; };
+const Q = new URLSearchParams(location.search);
 const cfg = {
-  entry_id: "e1", pin: "1234", is_admin: true,
+  entry_id: "e1", pin: "1234", is_admin: Q.get("admin") !== "0", language: Q.get("lang") || "en",
   rooms: [{ id: "r1", name: "Wohn-/Esszimmer", polygon: [[0,0],[7,0],[7,4],[3.45,4],[3.45,5.5],[0,5.5]] },
           { id: "r2", name: "Büro", polygon: [[0,0],[4,0],[4,3],[0,3]] }],
   zones: [{ id: "z1", num: 1, room: "r1", name: "Sofa", color: "#a78bfa", enabled: true, points: [[4.2,1.8],[6.6,1.8],[6.6,3.6],[4.2,3.6]], extra: [], off_delay: null },
@@ -30,6 +31,7 @@ const cfg = {
   ],
   settings: { off_delay: 10 }, controls: { cal_duration: 120 },
 };
+if (Q.get("canedit") != null) cfg.can_edit = Q.get("canedit") === "1";
 const subs = new Set();
 let t0 = performance.now();
 function state() {
@@ -48,6 +50,7 @@ function state() {
 function broadcastConfig() { for (const cb of subs) cb({ type: "config", ...JSON.parse(JSON.stringify(cfg)) }); }
 let nextNum = 4;
 const hass = {
+  language: Q.get("ulang") || undefined,
   connection: {
     subscribeMessage(cb, msg) {
       window.__ws.push(msg);
@@ -68,21 +71,50 @@ const hass = {
     }
     if (msg.type === "zone_presence/auto_calibrate") return { ok: true, sensors: { s1: { dx: 0.15, dy: 0.02 }, s2: { dx: -0.05, dy: 0 } } };
     if (msg.type === "zone_presence/calibration") return { status: "running", progress: 0 };
+    if (msg.type === "zone_presence/config") return JSON.parse(JSON.stringify(cfg));
     throw new Error("unbekannt " + msg.type);
   },
 };
 window.__setPanel = () => {
   const p = document.createElement("zone-presence-panel");
-  p.narrow = true; p.panel = { title: "Präsenz-Zonen", config: { entry_id: "e1" } }; p.hass = hass;
+  p.narrow = true; p.panel = { title: Q.get("title") || "", config: { entry_id: "e1" } }; p.hass = hass;
   document.getElementById("host").replaceChildren(p);
 };
 const card = document.createElement("zone-presence-card");
-card.setConfig({ title: "Präsenz-Zonen" });
+card.setConfig(Q.get("cardlang") ? { language: Q.get("cardlang") } : {});
 document.getElementById("host").appendChild(card);
 card.hass = hass;
 window.__card = card;
+window.__cfg = cfg;
+// Raum-Karte in einem Container fester Größe (w/h in px, h = "auto" für Masonry)
+window.__mountRoom = (config, w, h) => {
+  const box = document.createElement("div");
+  box.id = "roombox";
+  box.style.cssText = `width:${w}px;height:${h === "auto" ? "auto" : h + "px"};margin-top:12px;`;
+  const c = document.createElement("zone-presence-room-card");
+  c.setConfig(config);
+  box.appendChild(c);
+  document.getElementById("host").replaceChildren(box);
+  c.hass = hass;
+  window.__room = c;
+  return true;
+};
+window.__mountEditor = (config) => {
+  const ed = document.createElement("zone-presence-room-card-editor");
+  window.__edEvents = [];
+  ed.addEventListener("config-changed", (e) => window.__edEvents.push(e.detail.config));
+  ed.setConfig(config);
+  ed.hass = hass;
+  document.getElementById("host").replaceChildren(ed);
+  return true;
+};
+// Raumkoordinate -> Bildschirmpixel der Hauptkarte
+window.__scr = (x, y) => {
+  const svg = card._el.svg, m = svg.getScreenCTM(), b = card._b;
+  return [m.a * (x - b.minx) * 100 + m.e, m.d * (y - b.miny) * 100 + m.f];
+};
 window.confirm = () => true;
-window.prompt = (q, d) => (q.startsWith("Raumname") ? "Wohnzimmer neu" : d);
+window.prompt = (q, d) => (/^(Raumname|Room name)/.test(q) ? "Wohnzimmer neu" : d);
 </script>
 </body>
 </html>

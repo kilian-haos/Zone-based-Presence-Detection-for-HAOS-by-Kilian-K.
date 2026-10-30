@@ -18,6 +18,9 @@
           "add_sensor": "Add a sensor now",
           "panel": "Show panel in the sidebar",
           "panel_title": "Panel title"
+        },
+        "data_description": {
+          "panel_title": "Empty = default title (“Präsenz-Zonen” on a German Home Assistant, otherwise “Zone Presence”)."
         }
       },
       "sensor_device": {
@@ -63,7 +66,7 @@
           "edit_sensor": "Edit sensor entities",
           "remove_sensor": "Remove sensor",
           "settings": "Algorithms & timings",
-          "display": "Display (panel)"
+          "display": "Display & editing"
         }
       },
       "add_sensor": {
@@ -147,14 +150,27 @@
         }
       },
       "display": {
-        "title": "Display",
+        "title": "Display & editing",
         "data": {
           "panel": "Show panel in the sidebar",
-          "panel_title": "Panel title",
-          "edit_pin": "Edit PIN"
+          "panel_title": "Panel title"
         },
         "data_description": {
-          "edit_pin": "4-digit code for edit mode in card and panel. Empty = no PIN (editing is admin-only anyway)."
+          "panel_title": "Empty = default title (“Präsenz-Zonen” on a German Home Assistant, otherwise “Zone Presence”)."
+        },
+        "sections": {
+          "editing": {
+            "name": "Editing in card and panel",
+            "description": "**The PIN is only active if the field contains an entry** (4 digits). Empty = no PIN.\n\n⚠️ If **“Allow editing for non-administrators”** is checked, this PIN is the only thing that protects against unwanted changes. A PIN is strongly recommended with this option.",
+            "data": {
+              "edit_pin": "Edit PIN",
+              "allow_user_edit": "Allow editing for non-administrators"
+            },
+            "data_description": {
+              "edit_pin": "Leave empty = no PIN.",
+              "allow_user_edit": "Unchecked, only administrators can change rooms, zones, sensors and calibration. Checked, all users can – then be sure to set a PIN."
+            }
+          }
         }
       }
     }

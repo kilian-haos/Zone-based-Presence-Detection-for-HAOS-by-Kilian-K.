@@ -7,7 +7,7 @@
  * Platzierung, Kalibrierung) gehen über die Websocket-API zurück an die Integration.
  */
 (() => {
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 const DOMAIN = "zone_presence";
 const SCALE = 100;            // SVG-Einheiten pro Meter
 const MARGIN = 0.6;           // m Rand
@@ -27,6 +27,188 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 const rid = (p) => p + Math.random().toString(36).slice(2, 10);
 const round = (v, n = 3) => Math.round(v * 10 ** n) / 10 ** n;
 function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p[0]; y += p[1]; } return [x / pts.length, y / pts.length]; }
+/* ===================================================== Sprache (Standard: Englisch) */
+const I18N = {
+  en: {
+    title: "Zone Presence", connecting: "Connecting …", not_setup: "Is the “Zone Presence Detection” integration set up?",
+    conn_failed: "Connection failed", error: "Error: ", undo: "Undo", redo: "Redo", undone: "Undone", redone: "Restored",
+    raw_btn: "Show raw data & rejected ghosts", help: "Help", guide: "How to use", pin_title: "Edit code",
+    m_view: "View", m_zones: "Zones", m_sensors: "Sensors", m_rooms: "Rooms", m_cal: "Calibrate",
+    add_room: "＋ Room", settings: "⚙ Settings", settings_tip: "Sensors, algorithms, timings",
+    add_zone: "＋ Zone", hint_zones: "Drag corner/edge/centre · tap centre = extra points · tap name = settings",
+    hint_sensors: "Drag sensor = place · arrow = rotate · tap sensor = details & offsets",
+    rename_room: "Rename room", delete_room: "Delete room", hint_rooms: "Drag corner/edge · tap centre = one more point · snaps to right angles",
+    cal_single: "Single sensor", cal_room: "Whole room", autocal: "⚡ Align sensors", off0_one: "Offset 0 (this one)", off0_room: "Offsets 0 (room)",
+    cal_all: "⟲ All calibrations", learn_now: "🧠 Learning calibration now",
+    hint_cal_single: "Red cone: circle = x/y · arrow = rotate", hint_cal_room: "Red circle = whole room (x/y only)",
+    learning: "🧠 Learning … {p} %", scheduled: "🧠 Scheduled {t}",
+    off_reset: "Offset reset", off_reset_room: "Room offsets reset", cal_all_q: "Reset all calibrations (offsets of all sensors)?", cal_all_done: "All calibrations reset",
+    new_zone: "New zone", del_zone_q: "Delete zone “{n}”? Its binary sensor and person count will be removed.",
+    name: "Name", color: "Colour", off_delay: "Off delay (s) – empty = default {d} s", zone_active: "Zone active",
+    zone_note: "The binary sensor is named “{n} (Zone {k})” automatically, plus a “Person count” sensor.",
+    room_n: "Room {n}", room_name_q: "Room name:", del_room_q: "Delete room “{n}”?", del_room_zones: " Its {k} zone(s) will be deleted too.",
+    point_added: "Point added", label: "Short label", room: "Room", range: "Range (m)", half_angle: "Half angle (°)",
+    placement: "Placement", pos_x: "Pos X (m)", pos_y: "Pos Y (m)", rotation: "Rotation (°)", flip_x: "Mirror X axis",
+    cal_offset: "Calibration offset", off_x: "Offset X (m)", off_y: "Offset Y (m)", off_r: "Offset rotation (°)",
+    entities: "Entities", presence_unset: "– (optional, not set)",
+    entities_note: "Change entities under <a href=\"#\" data-act=\"settings\">Settings → Configure → Edit sensor entities</a>.",
+    aligned: "Aligned: {n} sensors to one point", need_two: "At least 2 sensors must see the same person.",
+    too_far: "Measurements are too far apart – put only one person into the overlap area.",
+    learn_q: "Start the learning calibration now for {m} minutes?\n\nThe rooms should be empty meanwhile. To schedule it (e.g. at 3 am) use the entities “Learning calibration start time” and “Learning calibration scheduled”.",
+    learn_started: "Learning calibration started", apply: "Apply", applied: "Applied", admin_only: "Editing is only allowed for administrators (can be enabled for all users in the integration options).",
+    locked_until: "Locked until {t}", wrong_code: "Wrong code – {n} attempts left", enter_code: "Enter 4-digit code",
+    g_tabs: "<b>Tabs:</b> switch rooms (number = persons in the room).",
+    g_raw: "<b>◎</b> shows raw data: unconfirmed detections (dashed, with confidence) and rejected ghosts (✕).",
+    g_edit: "<b>Edit</b> → PIN → toolbar. <b>↶/↷</b> = last 5 actions.",
+    g_zones: "<b>Zones:</b> drag corner/edge/centre, tap centre = extra points, tap name = name, colour, own off delay.",
+    g_sensors: "<b>Sensors:</b> drag = place, arrow = rotate, tap = details & offsets.",
+    g_rooms: "<b>Rooms:</b> drag corners/edges (snapping), tap centre = one more point, ＋ Room.",
+    g_cal: "<b>Calibrate:</b> red cone = corrected area. Single: move + rotate. Room: move only. <b>⚡</b> aligns sensors using one person.",
+    g_learn: "<b>🧠 Learning calibration:</b> learns ghost spots while the room is empty. Schedulable via the hub entities.",
+    card_desc: "Live floor plan with zones, persons and calibration (Zone Presence Detection by Kilian K.)",
+    room_card_name: "Zone Presence – Room", room_card_desc: "Only the floor plan of one room, freely scalable (Zone Presence Detection by Kilian K.)",
+    ed_room: "Room", ed_first: "First room", ed_cones: "Show sensors and coverage cones", ed_names: "Show zone names", ed_loading: "Loading rooms …",
+    ed_error: "Rooms could not be loaded – is the integration set up?",
+  },
+  de: {
+    title: "Präsenz-Zonen", connecting: "Verbinde …", not_setup: "Ist die Integration „Zone Presence Detection“ eingerichtet?",
+    conn_failed: "Verbindung fehlgeschlagen", error: "Fehler: ", undo: "Rückgängig", redo: "Wiederholen", undone: "Rückgängig", redone: "Wiederhergestellt",
+    raw_btn: "Rohdaten & verworfene Geister anzeigen", help: "Hilfe", guide: "Bedienung", pin_title: "Code für Bearbeiten",
+    m_view: "Ansicht", m_zones: "Zonen", m_sensors: "Sensoren", m_rooms: "Räume", m_cal: "Kalibrieren",
+    add_room: "＋ Raum", settings: "⚙ Einstellungen", settings_tip: "Sensoren, Algorithmen, Zeiten",
+    add_zone: "＋ Zone", hint_zones: "Ecke/Kante/Mitte ziehen · Mitte tippen = Extra-Punkte · Name tippen = Einstellungen",
+    hint_sensors: "Sensor ziehen = platzieren · Pfeil = drehen · Sensor tippen = Details & Offsets",
+    rename_room: "Raum umbenennen", delete_room: "Raum löschen", hint_rooms: "Ecke/Kante ziehen · Mitte tippen = Punkt mehr · Snapping auf rechte Winkel",
+    cal_single: "Einzelner Sensor", cal_room: "Ganzer Raum", autocal: "⚡ Sensoren abgleichen", off0_one: "Offset 0 (dieser)", off0_room: "Offsets 0 (Raum)",
+    cal_all: "⟲ Alle Kalibrierungen", learn_now: "🧠 Lernkalibrierung jetzt",
+    hint_cal_single: "Roter Kegel: Kreis = x/y · Pfeil = drehen", hint_cal_room: "Roter Kreis = ganzer Raum (nur x/y)",
+    learning: "🧠 Lernt … {p} %", scheduled: "🧠 Geplant {t}",
+    off_reset: "Offset zurückgesetzt", off_reset_room: "Offsets des Raums zurückgesetzt", cal_all_q: "Alle Kalibrierungen (Offsets aller Sensoren) zurücksetzen?", cal_all_done: "Alle Kalibrierungen zurückgesetzt",
+    new_zone: "Neue Zone", del_zone_q: "Zone „{n}“ löschen? Ihr Binärsensor und ihre Personenanzahl werden entfernt.",
+    name: "Name", color: "Farbe", off_delay: "Nachlaufzeit (s) – leer = Standard {d} s", zone_active: "Zone aktiv",
+    zone_note: "Der Binärsensor heißt automatisch „{n} (Zone {k})“, dazu gibt es „Personenanzahl“.",
+    room_n: "Raum {n}", room_name_q: "Raumname:", del_room_q: "Raum „{n}“ löschen?", del_room_zones: " Seine {k} Zone(n) werden ebenfalls gelöscht.",
+    point_added: "Punkt hinzugefügt", label: "Kürzel", room: "Raum", range: "Reichweite (m)", half_angle: "Halbwinkel (°)",
+    placement: "Platzierung", pos_x: "Pos X (m)", pos_y: "Pos Y (m)", rotation: "Rotation (°)", flip_x: "X-Achse spiegeln",
+    cal_offset: "Kalibrier-Offset", off_x: "Offset X (m)", off_y: "Offset Y (m)", off_r: "Offset Rotation (°)",
+    entities: "Entitäten", presence_unset: "– (optional, nicht gesetzt)",
+    entities_note: "Entitäten änderst du unter <a href=\"#\" data-act=\"settings\">Einstellungen → Konfigurieren → Sensor-Entitäten bearbeiten</a>.",
+    aligned: "Abgeglichen: {n} Sensoren auf einen Punkt", need_two: "Mindestens 2 Sensoren müssen dieselbe Person sehen.",
+    too_far: "Messpunkte liegen zu weit auseinander – nur eine Person in den Überlappungsbereich stellen.",
+    learn_q: "Lernkalibrierung jetzt für {m} Minuten starten?\n\nWährenddessen sollten die Räume leer sein. Geplant (z. B. nachts um 3 Uhr) geht es über die Entitäten „Startzeit Lernkalibrierung“ und „Lernkalibrierung geplant“.",
+    learn_started: "Lernkalibrierung gestartet", apply: "Übernehmen", applied: "Übernommen", admin_only: "Bearbeiten ist nur für Administratoren erlaubt (in den Optionen der Integration für alle freigebbar).",
+    locked_until: "Gesperrt bis {t} Uhr", wrong_code: "Falscher Code – noch {n} Versuche", enter_code: "4-stelligen Code eingeben",
+    g_tabs: "<b>Tabs:</b> Räume wechseln (Zahl = Personen im Raum).",
+    g_raw: "<b>◎</b> zeigt Rohdaten: unbestätigte Detektionen (gestrichelt, mit Konfidenz) und verworfene Geister (✕).",
+    g_edit: "<b>Bearbeiten</b> → PIN → Leiste. <b>↶/↷</b> = letzte 5 Aktionen.",
+    g_zones: "<b>Zonen:</b> Ecke/Kante/Mitte ziehen, Mitte tippen = Extra-Punkte, Name tippen = Name, Farbe, eigene Nachlaufzeit.",
+    g_sensors: "<b>Sensoren:</b> ziehen = platzieren, Pfeil = drehen, tippen = Details & Offsets.",
+    g_rooms: "<b>Räume:</b> Ecken/Kanten ziehen (Snapping), Mitte tippen = Punkt mehr, ＋ Raum.",
+    g_cal: "<b>Kalibrieren:</b> roter Kegel = korrigierter Bereich. Einzeln: verschieben + drehen. Raum: nur verschieben. <b>⚡</b> gleicht Sensoren über eine Person ab.",
+    g_learn: "<b>🧠 Lernkalibrierung:</b> lernt bei leerem Raum die Geisterstellen. Planbar über die Hub-Entitäten.",
+    card_desc: "Live-Grundriss mit Zonen, Personen und Kalibrierung (Zone Presence Detection by Kilian K.)",
+    room_card_name: "Zone Presence – Raum", room_card_desc: "Nur der Grundriss eines Raums, frei skalierbar (Zone Presence Detection by Kilian K.)",
+    ed_room: "Raum", ed_first: "Erster Raum", ed_cones: "Sensoren und Erfassungskegel anzeigen", ed_names: "Zonennamen anzeigen", ed_loading: "Räume werden geladen …",
+    ed_error: "Räume konnten nicht geladen werden – ist die Integration eingerichtet?",
+  },
+};
+const normLang = (l) => { const v = String(l || "").toLowerCase().slice(0, 2); return I18N[v] ? v : "en"; };
+const fmtStr = (s, vars) => String(s).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? vars[k] : m));
+/* ===================================================== Einrasten (Snapping)
+ * Sanfter Widerstand beim Zeichnen von Zonen und Räumen:
+ *  - Punkte: Raumecken und Ecken anderer Zonen (Zonen), stärkste Stufe
+ *  - Linien: Wände und Kanten anderer Zonen (Zonen); Parallelen/rechte Winkel zu Wänden,
+ *    eigenen Kanten und den Achsen, ausgehend von den festen Nachbarecken
+ *  - Schnittpunkte zweier Linien (z. B. parallel zur Wand UND rechter Winkel)
+ * Fangradien in Bildschirm-Pixeln (gleiches Gefühl bei jeder Größe), mit Hysterese.
+ * Maus + gedrückte Shift-Taste schaltet das Einrasten vorübergehend ab (Touch rastet immer).
+ */
+const SNAP_PX = { pt: 12, line: 9 };
+const SNAP_KEEP = 1.4;
+const vsub = (a, b) => [a[0] - b[0], a[1] - b[1]];
+const vadd = (a, b) => [a[0] + b[0], a[1] + b[1]];
+const vmul = (a, k) => [a[0] * k, a[1] * k];
+const vdot = (a, b) => a[0] * b[0] + a[1] * b[1];
+const vcross = (a, b) => a[0] * b[1] - a[1] * b[0];
+const vunit = (a) => { const l = Math.hypot(a[0], a[1]); return l > 1e-9 ? [a[0] / l, a[1] / l] : null; };
+const projLine = (p, a, d) => vadd(a, vmul(d, vdot(vsub(p, a), d)));
+function lineX(a1, d1, a2, d2) {
+  const c = vcross(d1, d2);
+  if (Math.abs(c) < 0.17) return null;            // fast parallel (< ~10°)
+  return vadd(a1, vmul(d1, vcross(vsub(a2, a1), d2) / c));
+}
+function polyEdges(pts) { return pts.map((p, i) => [p, pts[(i + 1) % pts.length]]); }
+// Eindeutige Richtungen (mod 180°) inkl. der Senkrechten
+function dirSet(segs, extra) {
+  const out = [];
+  const add = (d) => { if (!d) return; for (const e of out) if (Math.abs(vcross(d, e)) < 0.009) return; out.push(d); };
+  for (const d of extra || []) { add(vunit(d)); add(vunit([-d[1], d[0]])); }
+  for (const [a, b] of segs) { const d = vunit(vsub(b, a)); if (d) { add(d); add([-d[1], d[0]]); } }
+  return out;
+}
+const segLines = (segs, tag) => segs.map(([a, b], i) => { const d = vunit(vsub(b, a)); return d ? { a, d, seg: [a, b], key: tag + i } : null; }).filter(Boolean);
+const anchorLines = (pt, dirs, tag) => dirs.map((d, j) => ({ a: pt, d, key: `${tag}_${j}` }));
+function nearLines(p, lines, tol, prev) {
+  const out = [];
+  for (const L of lines) {
+    const q = projLine(p, L.a, L.d);
+    if (L.seg) {                                   // Strecke: nur in ihrem Bereich (+Toleranz)
+      const t = vdot(vsub(q, L.seg[0]), L.d), len = dist(L.seg[0], L.seg[1]);
+      if (t < -tol || t > len + tol) continue;
+    }
+    const dd = dist(p, q);
+    if (dd <= (prev.includes(L.key) ? tol * SNAP_KEEP : tol)) out.push({ L, q, dd });
+  }
+  return out;
+}
+// Einzelner Punkt (Ecke ziehen). ctx: { pts, lines, tolP, tolL, prev }
+function snapPoint(p, ctx) {
+  const prev = ctx.prev || "";
+  let best = null;
+  ctx.pts.forEach((q, i) => {
+    const key = "p" + i, dd = dist(p, q);
+    if (dd <= (prev === key ? ctx.tolP * SNAP_KEEP : ctx.tolP) && (!best || dd < best.dd)) best = { q, dd, key, guides: [{ pt: q }] };
+  });
+  if (best) return best;
+  const near = nearLines(p, ctx.lines, ctx.tolL, prev);
+  let bi = null;
+  for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
+    const A = near[i].L, B = near[j].L, X = lineX(A.a, A.d, B.a, B.d);
+    if (!X) continue;
+    const key = [A.key, B.key].sort().join("&"), dd = dist(p, X);
+    if (dd <= (prev === key ? ctx.tolP * SNAP_KEEP : ctx.tolP) && (!bi || dd < bi.dd)) bi = { q: X, dd, key, guides: [{ line: A }, { line: B }] };
+  }
+  if (bi) return bi;
+  if (!near.length) return null;
+  near.sort((a, b) => (prev === b.L.key) - (prev === a.L.key) || a.dd - b.dd);
+  return { q: near[0].q, dd: near[0].dd, key: near[0].L.key, guides: [{ line: near[0].L }], line: near[0].L };
+}
+// Mehrere Punkte gemeinsam verschieben (Kante/ganze Zone). items: [{ v, lines }]
+function snapTranslate(items, ctx) {
+  const prev = ctx.prev || "";
+  let best = null;
+  items.forEach((it, k) => ctx.pts.forEach((q, i) => {
+    const key = `p${i}@${k}`, dd = dist(it.v, q);
+    if (dd <= (prev === key ? ctx.tolP * SNAP_KEEP : ctx.tolP) && (!best || dd < best.dd)) best = { t: vsub(q, it.v), dd, key, guides: [{ pt: q }] };
+  }));
+  if (best) return best;
+  const cands = [];
+  items.forEach((it, k) => {
+    for (const n of nearLines(it.v, ctx.lines.concat(it.lines || []), ctx.tolL, prev)) cands.push({ c: vsub(n.q, it.v), dd: n.dd, L: n.L, key: `${n.L.key}@${k}` });
+  });
+  if (!cands.length) return null;
+  cands.sort((a, b) => (prev.includes(b.key)) - (prev.includes(a.key)) || a.dd - b.dd);
+  const c1 = cands[0], m1 = [-c1.L.d[1], c1.L.d[0]];
+  for (const c2 of cands.slice(1)) {                // zweite, nicht parallele Linie -> beide Richtungen
+    if (Math.abs(vcross(c1.L.d, c2.L.d)) < 0.34) continue;
+    const m2 = [-c2.L.d[1], c2.L.d[0]], b1 = vdot(c1.c, m1), b2 = vdot(c2.c, m2), det = m1[0] * m2[1] - m1[1] * m2[0];
+    const t = [(b1 * m2[1] - m1[1] * b2) / det, (m1[0] * b2 - b1 * m2[0]) / det];
+    if (dist(t, c1.c) <= ctx.tolP) return { t, key: [c1.key, c2.key].sort().join("&"), guides: [{ line: c1.L }, { line: c2.L }] };
+  }
+  return { t: c1.c, key: c1.key, guides: [{ line: c1.L }], line: c1.L };
+}
+const isAxis = (d) => Math.abs(d[0]) < 1e-6 || Math.abs(d[1]) < 1e-6;
+const gridR = (v) => round(Math.round(v / GRID_M) * GRID_M);
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 class ZonePresenceCard extends HTMLElement {
@@ -55,21 +237,35 @@ class ZonePresenceCard extends HTMLElement {
     this._zoneExtra = {};         // Wiederherstellung der Extra-Punkte (Sitzung)
   }
 
+  /* ===================================================== Sprache */
+  // Folgt automatisch Home Assistant: Sprache des angemeldeten Benutzers (Deutsch oder
+  // Englisch). Ohne Frontend-Sprache gilt die Systemsprache aus der Integration.
+  get _lang() {
+    const h = this._hass;
+    const ui = h && ((h.locale && h.locale.language) || h.language);
+    return normLang(ui || (this._cfg && this._cfg.language) || "en");
+  }
+  _t(key, vars) { const d = I18N[this._lang]; return fmtStr(key in d ? d[key] : I18N.en[key] != null ? I18N.en[key] : key, vars); }
+  get _title() { return this._config.title || this._t("title"); }
+  _timeFmt(t) { return new Date(t).toLocaleTimeString(this._lang === "de" ? "de-DE" : undefined, { hour: "2-digit", minute: "2-digit" }); }
+
   /* ===================================================== Lebenszyklus */
   setConfig(config) {
-    this._config = Object.assign({ title: "Präsenz-Zonen", lock_minutes: 30, merge_color: "#2dd4bf" }, config || {});
+    this._config = Object.assign({ lock_minutes: 30, merge_color: "#2dd4bf" }, config || {});
     try { this._showRaw = localStorage.getItem("zp_show_raw") === "1"; } catch (e) {}
     this._built = false;
     this._render();
   }
-  static getStubConfig() { return { title: "Präsenz-Zonen" }; }
+  static getStubConfig() { return {}; }
   getCardSize() { return 14; }
   getGridOptions() { return { columns: "full", min_rows: 8 }; }
 
   set hass(hass) {
     const first = !this._hass;
+    const before = this._hass ? this._lang : null;
     this._hass = hass;
     if (first) this._subscribe();   // Wiederholungen übernimmt der Watchdog
+    else if (before !== this._lang && !this._drag) { this._built = false; this._render(); }  // Sprache gewechselt
   }
   get hass() { return this._hass; }
 
@@ -103,7 +299,7 @@ class ZonePresenceCard extends HTMLElement {
       this._error = null;
     } catch (e) {
       this._unsubP = null;
-      this._error = (e && (e.message || e.code)) || "Verbindung fehlgeschlagen";
+      this._error = (e && (e.message || e.code)) || this._t("conn_failed");
       this._render();
     }
     this._subscribing = false;
@@ -118,7 +314,7 @@ class ZonePresenceCard extends HTMLElement {
         const pref = this._config.room && m.rooms.find((r) => r.id === this._config.room || r.name === this._config.room);
         this._activeRoom = (pref || m.rooms[0] || {}).id || null;
       }
-      if (!m.is_admin && this._mode !== "view") { this._mode = "view"; this._unlocked = false; }
+      if (!this._canEdit() && this._mode !== "view") { this._mode = "view"; this._unlocked = false; }
       if (this._drag) { this._pendingRebuild = true; return; }
       this._built = false;
       this._render();
@@ -147,6 +343,8 @@ class ZonePresenceCard extends HTMLElement {
     return this._cfg ? String(this._cfg.pin || "") : "1234";
   }
   _isAdmin() { return !!(this._cfg && this._cfg.is_admin); }
+  // Bearbeiten: Admins, oder alle Benutzer, wenn in der Integration freigegeben
+  _canEdit() { return !this._compact && !!(this._cfg && (this._cfg.can_edit != null ? this._cfg.can_edit : this._cfg.is_admin)); }
 
   _geometry() {
     const out = {};
@@ -167,7 +365,7 @@ class ZonePresenceCard extends HTMLElement {
   async _apply(parts, persist = true) {
     const msg = Object.assign({ type: `${DOMAIN}/apply`, persist }, parts);
     try { await this._ws(msg); }
-    catch (e) { this._toast("Fehler: " + ((e && e.message) || e)); }
+    catch (e) { this._toast(this._t("error") + ((e && e.message) || e)); }
   }
   _applyLive(parts) {
     this._livePending = Object.assign(this._livePending || {}, parts);
@@ -191,8 +389,8 @@ class ZonePresenceCard extends HTMLElement {
     this._apply({ rooms: s.rooms, zones: s.zones, sensors: s.sensors }, true);
     this._built = false; this._render();
   }
-  _undoAct() { if (!this._undo.length) return; this._redo.push(this._snap()); if (this._redo.length > HIST_MAX) this._redo.shift(); this._restore(this._undo.pop()); this._toast("Rückgängig"); }
-  _redoAct() { if (!this._redo.length) return; this._undo.push(this._snap()); if (this._undo.length > HIST_MAX) this._undo.shift(); this._restore(this._redo.pop()); this._toast("Wiederhergestellt"); }
+  _undoAct() { if (!this._undo.length) return; this._redo.push(this._snap()); if (this._redo.length > HIST_MAX) this._redo.shift(); this._restore(this._undo.pop()); this._toast(this._t("undone")); }
+  _redoAct() { if (!this._redo.length) return; this._undo.push(this._snap()); if (this._undo.length > HIST_MAX) this._undo.shift(); this._restore(this._redo.pop()); this._toast(this._t("redone")); }
   _updHist() {
     if (!this._el) return;
     this._el.undo.hidden = this._el.redo.hidden = !this._unlocked;
@@ -233,8 +431,8 @@ class ZonePresenceCard extends HTMLElement {
   _render() {
     if (!this.shadowRoot) return;
     if (!this._cfg) {
-      this.shadowRoot.innerHTML = `<style>${this._css()}</style><div class="zp"><div class="topbar"><div class="title">${esc(this._config.title)}</div></div>
-        <div class="empty">${this._error ? "⚠ " + esc(this._error) + "<br><small>Ist die Integration „Zone Presence Detection“ eingerichtet?</small>" : "Verbinde …"}</div></div>`;
+      this.shadowRoot.innerHTML = `<style>${this._css()}</style><div class="zp">${this._compact ? "" : `<div class="topbar"><div class="title">${esc(this._title)}</div></div>`}
+        <div class="empty">${this._error ? "⚠ " + esc(this._error) + "<br><small>" + esc(this._t("not_setup")) + "</small>" : esc(this._t("connecting"))}</div></div>`;
       this._el = null;
       return;
     }
@@ -246,7 +444,7 @@ class ZonePresenceCard extends HTMLElement {
       root: q(".zp"), svg: q("svg.stage"), tabs: q(".tabs"), toolbar: q(".toolbar"), ctx: q(".ctxbar"),
       room: q("#room"), cov: q("#coverage"), ghosts: q("#ghosts"), zones: q("#zones"), sensors: q("#sensors"),
       raw: q("#raw"), persons: q("#persons"), panel: q(".panel"), pin: q(".pin-overlay"), toast: q(".toast"),
-      mode: q(".mode-btn"), undo: q(".undo-btn"), redo: q(".redo-btn"), guide: q(".guide"), chip: q(".chip"),
+      mode: q(".mode-btn"), undo: q(".undo-btn"), redo: q(".redo-btn"), guide: q(".guide"), chip: q(".chip"), guides: q("#guides"),
     };
     this._personEls = new Map();
     this._wire();
@@ -261,24 +459,24 @@ class ZonePresenceCard extends HTMLElement {
   }
 
   _html(b) {
-    const admin = this._isAdmin();
+    const admin = this._canEdit();
     return `
-    <div class="zp${this._guideOpen ? "" : " guide-collapsed"}" data-mode="${this._mode}">
+    <div class="zp${this._guideOpen ? "" : " guide-collapsed"}${this._compact ? " compact" : ""}${this._compact && this._config.show_cones === false ? " no-cones" : ""}${this._compact && this._config.show_names === false ? " no-names" : ""}" data-mode="${this._mode}">
       <div class="topbar">
-        <div class="title">${esc(this._config.title)}</div>
+        <div class="title">${esc(this._title)}</div>
         <span class="chip" hidden></span>
         <div class="spacer"></div>
-        <button class="icon-btn raw-btn${this._showRaw ? " on" : ""}" title="Rohdaten & verworfene Geister anzeigen">◎</button>
-        <button class="icon-btn undo-btn" title="Rückgängig" hidden>↶</button>
-        <button class="icon-btn redo-btn" title="Wiederholen" hidden>↷</button>
+        <button class="icon-btn raw-btn${this._showRaw ? " on" : ""}" title="${esc(this._t("raw_btn"))}">◎</button>
+        <button class="icon-btn undo-btn" title="${esc(this._t("undo"))}" hidden>↶</button>
+        <button class="icon-btn redo-btn" title="${esc(this._t("redo"))}" hidden>↷</button>
         ${admin ? `<button class="mode-btn"><span class="dot"></span><span class="mt">${this._modeLabel()}</span></button>` : ""}
       </div>
       <div class="tabs">${this._tabsHtml()}</div>
       <div class="toolbar"${this._unlocked ? "" : " hidden"}>${this._toolbarHtml()}</div>
       <div class="ctxbar" hidden></div>
       <div class="body">
-        <aside class="guide">
-          <button class="guide-toggle" title="Hilfe">${this._guideOpen ? "⟨" : "?"}</button>
+        <aside class="guide" data-label="${esc(this._t("guide"))}">
+          <button class="guide-toggle" title="${esc(this._t("help"))}">${this._guideOpen ? "⟨" : "?"}</button>
           <div class="guide-inner">${this._guideHtml()}</div>
         </aside>
         <div class="stage-wrap" style="aspect-ratio:${b.w} / ${b.h}; --ar:${(b.w / b.h).toFixed(4)}">
@@ -300,6 +498,7 @@ class ZonePresenceCard extends HTMLElement {
             <g id="room"></g>
             <g mask="url(#fadeMX)"><g mask="url(#fadeMY)"><g id="coverage"></g><g id="ghosts"></g></g></g>
             <g id="zones"></g>
+            <g id="guides"></g>
             <g id="sensors"></g><g id="raw"></g><g id="persons"></g>
           </svg>
         </div>
@@ -308,7 +507,7 @@ class ZonePresenceCard extends HTMLElement {
       <div class="toast" hidden></div>
       <div class="pin-overlay" hidden>
         <div class="pin-box">
-          <div class="pin-title">Code für Bearbeiten</div>
+          <div class="pin-title">${esc(this._t("pin_title"))}</div>
           <div class="pin-sub"></div>
           <div class="pin-dots"><i></i><i></i><i></i><i></i></div>
           <div class="pin-pad">
@@ -320,34 +519,34 @@ class ZonePresenceCard extends HTMLElement {
     </div>`;
   }
 
-  _modeLabel() { return ({ view: "Ansicht", zones: "Zonen", sensors: "Sensoren", rooms: "Räume", "cal-sensor": "Kalibrieren", "cal-room": "Kalibrieren" })[this._mode] || "Ansicht"; }
+  _modeLabel() { return this._t(({ view: "m_view", zones: "m_zones", sensors: "m_sensors", rooms: "m_rooms", "cal-sensor": "m_cal", "cal-room": "m_cal" })[this._mode] || "m_view"); }
   _tabsHtml() {
     const t = this._rooms.map((r) => `<button class="tab${r.id === this._activeRoom ? " active" : ""}" data-room="${esc(r.id)}">${esc(r.name)}<span class="tab-count" data-roomcount="${esc(r.id)}"></span></button>`).join("");
-    const add = this._unlocked && this._mode === "rooms" ? `<button class="tab tab-add" data-addroom="1">＋ Raum</button>` : "";
+    const add = this._unlocked && this._mode === "rooms" ? `<button class="tab tab-add" data-addroom="1">${esc(this._t("add_room"))}</button>` : "";
     return t + add;
   }
   _toolbarHtml() {
     const seg = (m, l) => `<button class="seg${this._mode === m || (m === "cal" && this._mode.startsWith("cal")) ? " on" : ""}" data-mode="${m}">${l}</button>`;
-    return `<div class="segs">${seg("view", "Ansicht")}${seg("zones", "Zonen")}${seg("sensors", "Sensoren")}${seg("rooms", "Räume")}${seg("cal", "Kalibrieren")}</div>
-      <button class="link-btn" data-act="settings" title="Sensoren, Algorithmen, Zeiten">⚙ Einstellungen</button>`;
+    return `<div class="segs">${seg("view", this._t("m_view"))}${seg("zones", this._t("m_zones"))}${seg("sensors", this._t("m_sensors"))}${seg("rooms", this._t("m_rooms"))}${seg("cal", this._t("m_cal"))}</div>
+      ${this._isAdmin() ? `<button class="link-btn" data-act="settings" title="${esc(this._t("settings_tip"))}">${esc(this._t("settings"))}</button>` : ""}`;
   }
 
   _renderCtx() {
     const bar = this._el.ctx;
     let h = "";
     if (this._unlocked) {
-      if (this._mode === "zones") h = `<button class="ctx accent" data-act="addzone">＋ Zone</button><span class="hint">Ecke/Kante/Mitte ziehen · Mitte tippen = Extra-Punkte · Name tippen = Einstellungen</span>`;
-      else if (this._mode === "sensors") h = `<span class="hint">Sensor ziehen = platzieren · Pfeil = drehen · Sensor tippen = Details & Offsets</span>`;
-      else if (this._mode === "rooms") h = `<button class="ctx" data-act="renameroom">Raum umbenennen</button>${this._rooms.length > 1 ? `<button class="ctx danger" data-act="delroom">Raum löschen</button>` : ""}<span class="hint">Ecke/Kante ziehen · Mitte tippen = Punkt mehr · Snapping auf rechte Winkel</span>`;
+      if (this._mode === "zones") h = `<button class="ctx accent" data-act="addzone">${esc(this._t("add_zone"))}</button><span class="hint">${esc(this._t("hint_zones"))}</span>`;
+      else if (this._mode === "sensors") h = `<span class="hint">${esc(this._t("hint_sensors"))}</span>`;
+      else if (this._mode === "rooms") h = `<button class="ctx" data-act="renameroom">${esc(this._t("rename_room"))}</button>${this._rooms.length > 1 ? `<button class="ctx danger" data-act="delroom">${esc(this._t("delete_room"))}</button>` : ""}<span class="hint">${esc(this._t("hint_rooms"))}</span>`;
       else if (this._mode.startsWith("cal")) {
         const opts = this._activeSensors().map((s) => `<option value="${esc(s.id)}"${s.id === this._calSid ? " selected" : ""}>${esc(s.label + " · " + s.name)}</option>`).join("");
-        h = `<div class="segs small"><button class="seg${this._mode === "cal-sensor" ? " on" : ""}" data-calmode="cal-sensor">Einzelner Sensor</button><button class="seg${this._mode === "cal-room" ? " on" : ""}" data-calmode="cal-room">Ganzer Raum</button></div>
+        h = `<div class="segs small"><button class="seg${this._mode === "cal-sensor" ? " on" : ""}" data-calmode="cal-sensor">${esc(this._t("cal_single"))}</button><button class="seg${this._mode === "cal-room" ? " on" : ""}" data-calmode="cal-room">${esc(this._t("cal_room"))}</button></div>
           ${this._mode === "cal-sensor" ? `<select class="ctx-sel" data-act="calpick">${opts}</select>` : ""}
-          <button class="ctx accent" data-act="autocal">⚡ Sensoren abgleichen</button>
-          <button class="ctx" data-act="${this._mode === "cal-sensor" ? "calreset" : "calresetroom"}">${this._mode === "cal-sensor" ? "Offset 0 (dieser)" : "Offsets 0 (Raum)"}</button>
-          <button class="ctx danger" data-act="calresetall">⟲ Alle Kalibrierungen</button>
-          <button class="ctx" data-act="learn">🧠 Lernkalibrierung jetzt</button>
-          <span class="hint">${this._mode === "cal-sensor" ? "Roter Kegel: Kreis = x/y · Pfeil = drehen" : "Roter Kreis = ganzer Raum (nur x/y)"}</span>`;
+          <button class="ctx accent" data-act="autocal">${esc(this._t("autocal"))}</button>
+          <button class="ctx" data-act="${this._mode === "cal-sensor" ? "calreset" : "calresetroom"}">${esc(this._t(this._mode === "cal-sensor" ? "off0_one" : "off0_room"))}</button>
+          <button class="ctx danger" data-act="calresetall">${esc(this._t("cal_all"))}</button>
+          <button class="ctx" data-act="learn">${esc(this._t("learn_now"))}</button>
+          <span class="hint">${esc(this._t(this._mode === "cal-sensor" ? "hint_cal_single" : "hint_cal_room"))}</span>`;
       }
     }
     bar.innerHTML = h;
@@ -483,8 +682,8 @@ class ZonePresenceCard extends HTMLElement {
     // Status-Chip Lernkalibrierung
     const cal = live.cal || {};
     const chip = this._el.chip;
-    if (cal.status === "running") { chip.hidden = false; chip.textContent = `🧠 Lernt … ${Math.round((cal.progress || 0) * 100)} %`; }
-    else if (cal.status === "scheduled" && cal.next) { chip.hidden = false; chip.textContent = `🧠 Geplant ${new Date(cal.next).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`; }
+    if (cal.status === "running") { chip.hidden = false; chip.textContent = this._t("learning", { p: Math.round((cal.progress || 0) * 100) }); }
+    else if (cal.status === "scheduled" && cal.next) { chip.hidden = false; chip.textContent = this._t("scheduled", { t: this._timeFmt(cal.next) }); }
     else chip.hidden = true;
     // Personen
     const seen = new Set();
@@ -579,7 +778,7 @@ class ZonePresenceCard extends HTMLElement {
     e.svg.addEventListener("pointerdown", (ev) => this._down(ev));
     e.svg.addEventListener("pointermove", (ev) => this._move(ev));
     e.svg.addEventListener("pointerup", (ev) => this._up(ev));
-    e.svg.addEventListener("pointercancel", () => { this._drag = null; });
+    e.svg.addEventListener("pointercancel", () => { this._drag = null; this._endKeys(); });
     e.zones.addEventListener("click", (ev) => this._zoneClick(ev));
     e.pin.querySelectorAll(".pin-pad button").forEach((btn) => btn.addEventListener("click", () => this._onPin(btn.dataset.k)));
   }
@@ -603,9 +802,9 @@ class ZonePresenceCard extends HTMLElement {
     else if (act === "renameroom") this._renameRoom();
     else if (act === "delroom") this._deleteRoom();
     else if (act === "autocal") this._autoCal();
-    else if (act === "calreset") this._resetOffsets([this._calSid], "Offset zurückgesetzt");
-    else if (act === "calresetroom") this._resetOffsets(this._activeSensors().map((s) => s.id), "Offsets des Raums zurückgesetzt");
-    else if (act === "calresetall") { if (confirm("Alle Kalibrierungen (Offsets aller Sensoren) zurücksetzen?")) this._resetOffsets(this._sensors.map((s) => s.id), "Alle Kalibrierungen zurückgesetzt"); }
+    else if (act === "calreset") this._resetOffsets([this._calSid], this._t("off_reset"));
+    else if (act === "calresetroom") this._resetOffsets(this._activeSensors().map((s) => s.id), this._t("off_reset_room"));
+    else if (act === "calresetall") { if (confirm(this._t("cal_all_q"))) this._resetOffsets(this._sensors.map((s) => s.id), this._t("cal_all_done")); }
     else if (act === "learn") this._startLearning();
   }
 
@@ -650,24 +849,75 @@ class ZonePresenceCard extends HTMLElement {
     try { this._el.svg.setPointerCapture(ev.pointerId); } catch (x) {}
     this._pushUndo();
     this._drag = Object.assign(base, d);
+    // Shift drücken/loslassen ohne Mausbewegung -> Einrasten sofort neu bewerten
+    this._keyH = (e) => {
+      if (e.key !== "Shift" || !this._drag || !this._lastMove) return;
+      this._move(Object.assign({}, this._lastMove, { shiftKey: e.type === "keydown", preventDefault() {} }));
+    };
+    window.addEventListener("keydown", this._keyH);
+    window.addEventListener("keyup", this._keyH);
     ev.preventDefault();
+  }
+  _endKeys() {
+    if (this._keyH) { window.removeEventListener("keydown", this._keyH); window.removeEventListener("keyup", this._keyH); this._keyH = null; }
+    this._lastMove = null;
+    this._showGuides(null);
   }
 
   _move(ev) {
     const d = this._drag;
     if (!d) return;
+    this._lastMove = { clientX: ev.clientX, clientY: ev.clientY, pointerType: ev.pointerType, shiftKey: ev.shiftKey };
     const [sx, sy] = this._svgPt(ev);
     const cur = this._toRoom(sx, sy);
     const dx = cur[0] - d.start[0], dy = cur[1] - d.start[1];
     d.moved = Math.max(d.moved, Math.hypot(sx - d.startSvg[0], sy - d.startSvg[1]));
     if (d.moved < TAP_PX) return;
     const r3 = (p) => [round(p[0]), round(p[1])];
+    // Einrasten: immer bei Touch/Stift, bei der Maus außer mit gedrückter Shift-Taste
+    const snap = !(ev.shiftKey && ev.pointerType === "mouse");
+    d._delta = [dx, dy];
+    const res = (r) => { d.snapKey = r ? r.key : ""; this._showGuides(r ? r.guides : null); return r; };
     switch (d.kind) {
-      case "zcorner": d.z.points[d.idx] = r3([d.orig[0] + dx, d.orig[1] + dy]); this._renderZone(d.z); break;
-      case "zedge": d.z.points[d.i] = r3([d.p0[0] + dx, d.p0[1] + dy]); d.z.points[d.j] = r3([d.p1[0] + dx, d.p1[1] + dy]); this._renderZone(d.z); break;
-      case "zmove": d.z.points = d.orig.map((p) => r3([p[0] + dx, p[1] + dy])); this._renderZone(d.z); break;
-      case "rcorner": d.room.polygon[d.idx] = this._snapPoint(d.room, d.idx, [d.orig[0] + dx, d.orig[1] + dy]); this._renderRoom(); break;
-      case "redge": d.room.polygon[d.i] = r3([d.p0[0] + dx, d.p0[1] + dy]); d.room.polygon[d.j] = r3([d.p1[0] + dx, d.p1[1] + dy]); this._renderRoom(); break;
+      case "zcorner": {
+        let p = [d.orig[0] + dx, d.orig[1] + dy];
+        const r = snap ? res(snapPoint(p, this._snapCtx(d.z.points, [d.idx], "zone", d))) : res(null);
+        if (r) p = r.q;
+        d.z.points[d.idx] = r3(p); this._renderZone(d.z); break;
+      }
+      case "zedge": {
+        let t = [dx, dy];
+        if (snap) { const r = res(this._snapEdge(d, d.z.points, "zone")); if (r) t = vadd(t, r.t); } else res(null);
+        d.z.points[d.i] = r3(vadd(d.p0, t)); d.z.points[d.j] = r3(vadd(d.p1, t)); this._renderZone(d.z); break;
+      }
+      case "zmove": {
+        let t = [dx, dy];
+        if (snap) {
+          const ctx = this._snapCtx(d.orig, d.orig.map((_, i) => i), "zone", d);
+          const r = res(snapTranslate(d.orig.map((p) => ({ v: vadd(p, t) })), ctx));
+          if (r) t = vadd(t, r.t);
+        } else res(null);
+        d.z.points = d.orig.map((p) => r3(vadd(p, t))); this._renderZone(d.z); break;
+      }
+      case "rcorner": {
+        let p = [d.orig[0] + dx, d.orig[1] + dy];
+        if (snap) {
+          const r = res(snapPoint(p, this._snapCtx(d.room.polygon, [d.idx], "room", d)));
+          if (!r) p = [gridR(p[0]), gridR(p[1])];
+          else if (r.line && isAxis(r.line.d)) p = Math.abs(r.line.d[0]) < 1e-6 ? [r.q[0], gridR(r.q[1])] : [gridR(r.q[0]), r.q[1]];
+          else p = r.q;
+        } else res(null);
+        d.room.polygon[d.idx] = r3(p); this._renderRoom(); break;
+      }
+      case "redge": {
+        let t = [dx, dy];
+        if (snap) {
+          const r = res(this._snapEdge(d, d.room.polygon, "room"));
+          if (r) t = vadd(t, r.t);
+          else { const q = [gridR(d.p0[0] + t[0]), gridR(d.p0[1] + t[1])]; t = vsub(q, d.p0); }
+        } else res(null);
+        d.room.polygon[d.i] = r3(vadd(d.p0, t)); d.room.polygon[d.j] = r3(vadd(d.p1, t)); this._renderRoom(); break;
+      }
       case "rmove": d.room.polygon = d.orig.map((p) => r3([p[0] + dx, p[1] + dy])); this._renderRoom(); break;
       case "smove": d.s.pos = r3([d.orig[0] + dx, d.orig[1] + dy]); this._renderSensors(); this._renderRoom(); this._applyLive({ sensors: { [d.s.id]: { pos: d.s.pos } } }); break;
       case "srot": { const bp = this._basePos(d.s); d.s.rot = Math.round(r2d(Math.atan2(-(cur[0] - bp[0]), cur[1] - bp[1]))); this._renderSensors(); this._renderRoom(); this._applyLive({ sensors: { [d.s.id]: { rot: d.s.rot } } }); break; }
@@ -686,6 +936,7 @@ class ZonePresenceCard extends HTMLElement {
     const d = this._drag;
     if (!d) return;
     this._drag = null;
+    this._endKeys();
     try { this._el.svg.releasePointerCapture(ev.pointerId); } catch (x) {}
     const tap = d.moved < TAP_PX;
     if (tap && d.kind === "zmove") { this._toggleExtra(d.z); return this._afterDrag(); }
@@ -705,12 +956,55 @@ class ZonePresenceCard extends HTMLElement {
   }
   _afterDrag() { if (this._pendingRebuild) { this._pendingRebuild = false; this._built = false; this._render(); } }
 
-  _snapPoint(room, idx, p) {
-    const n = room.polygon.length, prev = room.polygon[(idx - 1 + n) % n], next = room.polygon[(idx + 1) % n];
-    let [x, y] = p;
-    for (const nb of [prev, next]) { if (Math.abs(x - nb[0]) < SNAP_M) x = nb[0]; if (Math.abs(y - nb[1]) < SNAP_M) y = nb[1]; }
-    room.polygon.forEach((q, i) => { if (i === idx) return; if (Math.abs(x - q[0]) < SNAP_M) x = q[0]; if (Math.abs(y - q[1]) < SNAP_M) y = q[1]; });
-    return [round(Math.round(x / GRID_M) * GRID_M), round(Math.round(y / GRID_M) * GRID_M)];
+  /* ----- Einrasten: Kontext ----- */
+  // pts: Polygon des gezogenen Objekts, moving: Indizes, die sich bewegen
+  _snapCtx(pts, moving, kind, d) {
+    const ppm = this._ppm(), mv = new Set(moving), n = pts.length;
+    const fixedEdges = polyEdges(pts).filter((e, i) => !mv.has(i) && !mv.has((i + 1) % n));
+    const ctx = { pts: [], lines: [], tolP: SNAP_PX.pt / ppm, tolL: SNAP_PX.line / ppm, prev: d.snapKey || "" };
+    if (kind === "zone") {
+      const room = this._roomPoly();
+      const others = this._zones.filter((o) => o.room === this._activeRoom && o !== d.z);
+      ctx.pts = room.concat(...others.map((o) => o.points));
+      ctx.lines = segLines(polyEdges(room), "w").concat(...others.map((o, k) => segLines(polyEdges(o.points), `z${k}e`)));
+      ctx.dirs = dirSet(polyEdges(room).concat(fixedEdges), [[1, 0]]);
+    } else {
+      ctx.dirs = dirSet(fixedEdges, [[1, 0]]);
+      // Ausrichten an allen anderen Ecken des Raums (waagrecht/senkrecht)
+      pts.forEach((q, i) => { if (!mv.has(i)) ctx.lines.push({ a: q, d: [1, 0], key: `vx${i}` }, { a: q, d: [0, 1], key: `vy${i}` }); });
+    }
+    // Ecke ziehen: Parallelen/rechte Winkel ausgehend von den festen Nachbarecken
+    if (moving.length === 1) {
+      const i = moving[0], a = pts[(i - 1 + n) % n], b = pts[(i + 1) % n];
+      ctx.lines = ctx.lines.concat(anchorLines(a, ctx.dirs, "na"), anchorLines(b, ctx.dirs, "nb"));
+    }
+    return ctx;
+  }
+  // Kante ziehen: beide Endpunkte gemeinsam, Nachbarkanten parallel/rechtwinklig halten
+  _snapEdge(d, pts, kind) {
+    const n = pts.length;
+    const ctx = this._snapCtx(pts, [d.i, d.j], kind, d);
+    const cur = d._delta || [0, 0];          // ungesnappte Verschiebung seit Beginn des Ziehens
+    const vi = vadd(d.p0, cur), vj = vadd(d.p1, cur);
+    const pi = pts[(d.i - 1 + n) % n], nj = pts[(d.j + 1) % n];
+    const items = [
+      { v: vi, lines: pi === pts[d.j] ? [] : anchorLines(pi, ctx.dirs, "ea") },
+      { v: vj, lines: nj === pts[d.i] ? [] : anchorLines(nj, ctx.dirs, "eb") },
+    ];
+    if (kind === "room") ctx.lines = [];          // Räume: nur Nachbarkanten, keine fremden Linien
+    return snapTranslate(items, ctx);
+  }
+  _ppm() {
+    try { const m = this._el.svg.getScreenCTM(); return Math.max(1e-3, Math.hypot(m.a, m.b) * SCALE); } catch (e) { return 80; }
+  }
+  _showGuides(guides) {
+    const g = this._el && this._el.guides;
+    if (!g) return;
+    g.innerHTML = (guides || []).map((x) => {
+      if (x.pt) { const [cx, cy] = this._px(...x.pt); return `<circle class="snap-pt" cx="${cx}" cy="${cy}" r="11"/>`; }
+      const L = x.line, A = this._px(...vadd(L.a, vmul(L.d, -60))), B = this._px(...vadd(L.a, vmul(L.d, 60)));
+      return `<line class="snap-line" x1="${A[0]}" y1="${A[1]}" x2="${B[0]}" y2="${B[1]}"/>`;
+    }).join("");
   }
 
   /* ----- Zonen ----- */
@@ -750,7 +1044,7 @@ class ZonePresenceCard extends HTMLElement {
     const c = centroid(this._roomPoly()), h = 0.75;
     const used = new Set(this._zones.map((z) => z.color));
     const z = {
-      id: rid("z"), room: this._activeRoom, name: "Neue Zone", enabled: true, extra: [], off_delay: null,
+      id: rid("z"), room: this._activeRoom, name: this._t("new_zone"), enabled: true, extra: [], off_delay: null,
       color: ZONE_COLORS.find((col) => !used.has(col)) || ZONE_COLORS[this._zones.length % ZONE_COLORS.length],
       points: [[c[0] - h, c[1] - h], [c[0] + h, c[1] - h], [c[0] + h, c[1] + h], [c[0] - h, c[1] + h]].map((p) => [round(p[0]), round(p[1])]),
     };
@@ -759,7 +1053,7 @@ class ZonePresenceCard extends HTMLElement {
     this._apply({ zones: this._zones });
   }
   _deleteZone(z) {
-    if (!confirm(`Zone „${z.name}“ löschen? Ihr Binärsensor und ihre Personenanzahl werden entfernt.`)) return;
+    if (!confirm(this._t("del_zone_q", { n: z.name }))) return;
     this._pushUndo();
     this._cfg.zones = this._zones.filter((x) => x.id !== z.id);
     this._renderZones();
@@ -776,12 +1070,12 @@ class ZonePresenceCard extends HTMLElement {
     const s = (this._cfg && this._cfg.settings) || {};
     this._panel(`Zone ${z.num ? z.num : ""} · ${esc(z.name)}`, `
       <div class="p-grid">
-        ${this._field("Name", "name", z.name)}
-        ${this._field("Farbe", "color", z.color, "color")}
-        ${this._field(`Nachlaufzeit (s) – leer = Standard ${s.off_delay ?? 10} s`, "off_delay", z.off_delay ?? "", "number")}
-        <label class="p-row p-check"><input type="checkbox" data-p="enabled"${z.enabled === false ? "" : " checked"}><span>Zone aktiv</span></label>
+        ${this._field(this._t("name"), "name", z.name)}
+        ${this._field(this._t("color"), "color", z.color, "color")}
+        ${this._field(this._t("off_delay", { d: s.off_delay ?? 10 }), "off_delay", z.off_delay ?? "", "number")}
+        <label class="p-row p-check"><input type="checkbox" data-p="enabled"${z.enabled === false ? "" : " checked"}><span>${esc(this._t("zone_active"))}</span></label>
       </div>
-      <div class="p-note">Der Binärsensor heißt automatisch „${esc(z.name)} (Zone ${z.num || "?"})“, dazu gibt es „Personenanzahl“.</div>`,
+      <div class="p-note">${esc(this._t("zone_note", { n: z.name, k: z.num || "?" }))}</div>`,
     (get) => {
       this._pushUndo();
       z.name = (get("name") || z.name).slice(0, 40);
@@ -797,7 +1091,7 @@ class ZonePresenceCard extends HTMLElement {
   /* ----- Räume ----- */
   _addRoom() {
     this._pushUndo();
-    const room = { id: rid("r"), name: "Raum " + (this._rooms.length + 1), polygon: [[0, 0], [4, 0], [4, 3], [0, 3]] };
+    const room = { id: rid("r"), name: this._t("room_n", { n: this._rooms.length + 1 }), polygon: [[0, 0], [4, 0], [4, 3], [0, 3]] };
     this._cfg.rooms = this._rooms.concat([room]);
     this._activeRoom = room.id;
     this._apply({ rooms: this._rooms });
@@ -805,7 +1099,7 @@ class ZonePresenceCard extends HTMLElement {
   }
   _renameRoom() {
     const r = this._room(); if (!r) return;
-    const name = prompt("Raumname:", r.name);
+    const name = prompt(this._t("room_name_q"), r.name);
     if (name == null || !name.trim()) return;
     this._pushUndo();
     r.name = name.trim().slice(0, 40);
@@ -817,7 +1111,7 @@ class ZonePresenceCard extends HTMLElement {
     const r = this._room();
     if (!r || this._rooms.length <= 1) return;
     const nz = this._zones.filter((z) => z.room === r.id).length;
-    if (!confirm(`Raum „${r.name}“ löschen?${nz ? ` Seine ${nz} Zone(n) werden ebenfalls gelöscht.` : ""}`)) return;
+    if (!confirm(this._t("del_room_q", { n: r.name }) + (nz ? this._t("del_room_zones", { k: nz }) : ""))) return;
     this._pushUndo();
     this._cfg.rooms = this._rooms.filter((x) => x.id !== r.id);
     this._cfg.zones = this._zones.filter((z) => z.room !== r.id);
@@ -830,7 +1124,7 @@ class ZonePresenceCard extends HTMLElement {
     room.polygon.splice(e.i + 1, 0, [round(e.mid[0]), round(e.mid[1])]);
     this._renderRoom();
     this._apply({ rooms: this._rooms });
-    this._toast("Punkt hinzugefügt");
+    this._toast(this._t("point_added"));
   }
 
   /* ----- Sensoren ----- */
@@ -838,27 +1132,27 @@ class ZonePresenceCard extends HTMLElement {
     const o = this._off(s), ents = s.entities || {};
     const roomOpts = this._rooms.map((r) => `<option value="${esc(r.id)}"${r.id === s.room ? " selected" : ""}>${esc(r.name)}</option>`).join("");
     const entList = (ents.targets || []).map((t, i) => `<div class="p-ent"><b>Target ${i + 1}</b><code>${esc(t.x)}</code><code>${esc(t.y)}</code></div>`).join("")
-      + `<div class="p-ent"><b>Presence</b><code>${esc(ents.presence || "– (optional, nicht gesetzt)")}</code></div>`;
+      + `<div class="p-ent"><b>Presence</b><code>${esc(ents.presence || this._t("presence_unset"))}</code></div>`;
     this._panel(`${esc(s.label)} · ${esc(s.name)}`, `
       <div class="p-grid">
-        ${this._field("Name", "name", s.name)}${this._field("Kürzel", "label", s.label)}
-        ${this._field("Farbe", "color", s.color, "color")}
-        <label class="p-row"><span>Raum</span><select data-p="room">${roomOpts}</select></label>
-        ${this._field("Reichweite (m)", "range", s.range, "number")}${this._field("Halbwinkel (°)", "half_angle", s.half_angle, "number")}
+        ${this._field(this._t("name"), "name", s.name)}${this._field(this._t("label"), "label", s.label)}
+        ${this._field(this._t("color"), "color", s.color, "color")}
+        <label class="p-row"><span>${esc(this._t("room"))}</span><select data-p="room">${roomOpts}</select></label>
+        ${this._field(this._t("range"), "range", s.range, "number")}${this._field(this._t("half_angle"), "half_angle", s.half_angle, "number")}
       </div>
-      <div class="p-sub">Platzierung</div>
+      <div class="p-sub">${esc(this._t("placement"))}</div>
       <div class="p-grid">
-        ${this._field("Pos X (m)", "px", this._basePos(s)[0], "number")}${this._field("Pos Y (m)", "py", this._basePos(s)[1], "number")}
-        ${this._field("Rotation (°)", "rot", this._baseRot(s), "number")}
-        <label class="p-row p-check"><input type="checkbox" data-p="flip_x"${s.flip_x < 0 ? " checked" : ""}><span>X-Achse spiegeln</span></label>
+        ${this._field(this._t("pos_x"), "px", this._basePos(s)[0], "number")}${this._field(this._t("pos_y"), "py", this._basePos(s)[1], "number")}
+        ${this._field(this._t("rotation"), "rot", this._baseRot(s), "number")}
+        <label class="p-row p-check"><input type="checkbox" data-p="flip_x"${s.flip_x < 0 ? " checked" : ""}><span>${esc(this._t("flip_x"))}</span></label>
       </div>
-      <div class="p-sub">Kalibrier-Offset</div>
+      <div class="p-sub">${esc(this._t("cal_offset"))}</div>
       <div class="p-grid">
-        ${this._field("Offset X (m)", "dx", o.dx || 0, "number")}${this._field("Offset Y (m)", "dy", o.dy || 0, "number")}
-        ${this._field("Offset Rotation (°)", "dr", o.dr || 0, "number")}
+        ${this._field(this._t("off_x"), "dx", o.dx || 0, "number")}${this._field(this._t("off_y"), "dy", o.dy || 0, "number")}
+        ${this._field(this._t("off_r"), "dr", o.dr || 0, "number")}
       </div>
-      <div class="p-sub">Entitäten</div>${entList}
-      <div class="p-note">Entitäten änderst du unter <a href="#" data-act="settings">Einstellungen → Konfigurieren → Sensor-Entitäten bearbeiten</a>.</div>`,
+      <div class="p-sub">${esc(this._t("entities"))}</div>${entList}
+      <div class="p-note">${this._t("entities_note")}</div>`,
     (get) => {
       this._pushUndo();
       const num = (k, def) => { const v = parseFloat(get(k)); return isFinite(v) ? v : def; };
@@ -888,15 +1182,15 @@ class ZonePresenceCard extends HTMLElement {
     this._pushUndo();
     try {
       const res = await this._ws({ type: `${DOMAIN}/auto_calibrate`, room_id: this._activeRoom });
-      if (res.ok) this._toast(`Abgeglichen: ${Object.keys(res.sensors).length} Sensoren auf einen Punkt`);
-      else { this._popNoop(); this._toast(res.error === "need_two" ? "Mindestens 2 Sensoren müssen dieselbe Person sehen." : "Messpunkte liegen zu weit auseinander – nur eine Person in den Überlappungsbereich stellen."); }
-    } catch (e) { this._popNoop(); this._toast("Fehler: " + ((e && e.message) || e)); }
+      if (res.ok) this._toast(this._t("aligned", { n: Object.keys(res.sensors).length }));
+      else { this._popNoop(); this._toast(this._t(res.error === "need_two" ? "need_two" : "too_far")); }
+    } catch (e) { this._popNoop(); this._toast(this._t("error") + ((e && e.message) || e)); }
   }
   async _startLearning() {
     const mins = (this._cfg.controls && this._cfg.controls.cal_duration) || 120;
-    if (!confirm(`Lernkalibrierung jetzt für ${mins} Minuten starten?\n\nWährenddessen sollten die Räume leer sein. Geplant (z. B. nachts um 3 Uhr) geht es über die Entitäten „Startzeit Lernkalibrierung“ und „Lernkalibrierung geplant“.`)) return;
-    try { await this._ws({ type: `${DOMAIN}/calibration`, action: "start" }); this._toast("Lernkalibrierung gestartet"); }
-    catch (e) { this._toast("Fehler: " + ((e && e.message) || e)); }
+    if (!confirm(this._t("learn_q", { m: mins }))) return;
+    try { await this._ws({ type: `${DOMAIN}/calibration`, action: "start" }); this._toast(this._t("learn_started")); }
+    catch (e) { this._toast(this._t("error") + ((e && e.message) || e)); }
   }
   _openSettings() {
     history.pushState(null, "", `/config/integrations/integration/${DOMAIN}`);
@@ -905,32 +1199,32 @@ class ZonePresenceCard extends HTMLElement {
 
   /* ----- Panel/Formulare ----- */
   _field(label, key, value, type = "text") {
-    return `<label class="p-row"><span>${label}</span><input data-p="${key}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(value)}"></label>`;
+    return `<label class="p-row"><span>${esc(label)}</span><input data-p="${key}" type="${type}" ${type === "number" ? 'step="any"' : ""} value="${esc(value)}"></label>`;
   }
   _panel(title, body, onSave) {
     const p = this._el.panel;
     p.innerHTML = `<div class="p-box"><div class="p-head"><span>${title}</span><button class="p-close">✕</button></div>
-      <div class="p-scroll">${body}</div><div class="p-foot"><button class="p-save">Übernehmen</button></div></div>`;
+      <div class="p-scroll">${body}</div><div class="p-foot"><button class="p-save">${esc(this._t("apply"))}</button></div></div>`;
     p.hidden = false;
     const get = (k) => { const el = p.querySelector(`[data-p="${k}"]`); return el ? String(el.value).trim() : ""; };
     p.querySelector(".p-close").addEventListener("click", () => { p.hidden = true; });
     p.addEventListener("click", (ev) => { if (ev.target === p) p.hidden = true; }, { once: true });
-    p.querySelector(".p-save").addEventListener("click", () => { onSave(get); p.hidden = true; this._toast("Übernommen"); });
+    p.querySelector(".p-save").addEventListener("click", () => { onSave(get); p.hidden = true; this._toast(this._t("applied")); });
   }
 
   /* ----- PIN ----- */
   _lockKey() { return "zp_lock"; }
   _lock() { try { return JSON.parse(localStorage.getItem(this._lockKey())) || { fails: 0, until: 0 }; } catch (e) { return { fails: 0, until: 0 }; } }
   _setLock(s) { try { localStorage.setItem(this._lockKey(), JSON.stringify(s)); } catch (e) {} }
-  _fmt(t) { return new Date(t).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }); }
+  _fmt(t) { return this._timeFmt(t); }
   _requestUnlock(then) {
-    if (!this._isAdmin()) return this._toast("Bearbeiten ist nur für Administratoren möglich.");
+    if (!this._canEdit()) return this._toast(this._t("admin_only"));
     if (!this._pin()) { this._unlocked = true; then(); return; }
     this._pinThen = then;
     const lock = this._lock(), p = this._el.pin;
     p.hidden = false;
-    if (lock.until > Date.now()) this._pinSub("Gesperrt bis " + this._fmt(lock.until) + " Uhr");
-    else { this._pinBuffer = ""; this._dots(); this._pinSub(lock.fails > 0 ? `Falscher Code – noch ${3 - lock.fails} Versuche` : "4-stelligen Code eingeben"); }
+    if (lock.until > Date.now()) this._pinSub(this._t("locked_until", { t: this._fmt(lock.until) }));
+    else { this._pinBuffer = ""; this._dots(); this._pinSub(lock.fails > 0 ? this._t("wrong_code", { n: 3 - lock.fails }) : this._t("enter_code")); }
   }
   _pinSub(t) { this._el.pin.querySelector(".pin-sub").textContent = t; }
   _dots() { this._el.pin.querySelectorAll(".pin-dots i").forEach((d, i) => d.classList.toggle("on", i < this._pinBuffer.length)); }
@@ -951,8 +1245,8 @@ class ZonePresenceCard extends HTMLElement {
       return;
     }
     const lock = this._lock(); lock.fails = (lock.fails || 0) + 1; this._pinBuffer = ""; this._dots();
-    if (lock.fails >= 3) { lock.until = Date.now() + (Number(this._config.lock_minutes) || 30) * 60000; lock.fails = 0; this._pinSub("Gesperrt bis " + this._fmt(lock.until) + " Uhr"); }
-    else this._pinSub(`Falscher Code – noch ${3 - lock.fails} Versuche`);
+    if (lock.fails >= 3) { lock.until = Date.now() + (Number(this._config.lock_minutes) || 30) * 60000; lock.fails = 0; this._pinSub(this._t("locked_until", { t: this._fmt(lock.until) })); }
+    else this._pinSub(this._t("wrong_code", { n: 3 - lock.fails }));
     this._setLock(lock);
     box.classList.add("shake"); setTimeout(() => box.classList.remove("shake"), 500);
   }
@@ -965,16 +1259,17 @@ class ZonePresenceCard extends HTMLElement {
   }
 
   _guideHtml() {
-    return `<div class="guide-head">Bedienung</div><div class="guide-body">
-      <p><b>Tabs:</b> Räume wechseln (Zahl = Personen im Raum).</p>
-      <p><b>◎</b> zeigt Rohdaten: unbestätigte Detektionen (gestrichelt, mit Konfidenz) und verworfene Geister (✕).</p>
-      <p><b>Bearbeiten</b> → PIN → Leiste. <b>↶/↷</b> = letzte 5 Aktionen.</p>
+    const t = (k) => this._t(k);   // feste, eigene Texte mit <b>-Auszeichnung
+    return `<div class="guide-head">${esc(t("guide"))}</div><div class="guide-body">
+      <p>${t("g_tabs")}</p>
+      <p>${t("g_raw")}</p>
+      <p>${t("g_edit")}</p>
       <ul>
-        <li><b>Zonen:</b> Ecke/Kante/Mitte ziehen, Mitte tippen = Extra-Punkte, Name tippen = Name, Farbe, eigene Nachlaufzeit.</li>
-        <li><b>Sensoren:</b> ziehen = platzieren, Pfeil = drehen, tippen = Details & Offsets.</li>
-        <li><b>Räume:</b> Ecken/Kanten ziehen (Snapping), Mitte tippen = Punkt mehr, ＋ Raum.</li>
-        <li><b>Kalibrieren:</b> roter Kegel = korrigierter Bereich. Einzeln: verschieben + drehen. Raum: nur verschieben. <b>⚡</b> gleicht Sensoren über eine Person ab.</li>
-        <li><b>🧠 Lernkalibrierung:</b> lernt bei leerem Raum die Geisterstellen. Planbar über die Hub-Entitäten.</li>
+        <li>${t("g_zones")}</li>
+        <li>${t("g_sensors")}</li>
+        <li>${t("g_rooms")}</li>
+        <li>${t("g_cal")}</li>
+        <li>${t("g_learn")}</li>
       </ul></div>`;
   }
 
@@ -1054,6 +1349,18 @@ class ZonePresenceCard extends HTMLElement {
     :host([panel]){ --zp-maxh:calc(100vh - 210px); }
     .stage-wrap{ flex:0 1 auto; min-width:0; margin:0 auto; width:min(100%, calc(var(--zp-maxh) * var(--ar))); max-height:var(--zp-maxh); background:var(--c-bg); border-radius:var(--rad-in); overflow:hidden; }
     svg.stage{ width:100%; height:100%; display:block; touch-action:none; }
+    /* Raum-Karte: nur der Grundriss, frei skalierbar (füllt die Kachel, Seitenverhältnis bleibt) */
+    :host(.zp-room-host){ height:100%; }
+    .zp.compact{ height:100%; display:flex; }
+    .zp.compact > :not(.body){ display:none !important; }
+    .zp.compact .body{ flex:1 1 auto; padding:0; min-width:0; min-height:0; height:100%; }
+    .zp.compact .guide{ display:none; }
+    .zp.compact .stage-wrap{ flex:1 1 auto; width:100%; height:100%; max-height:none; margin:0; background:transparent; border-radius:var(--rad); }
+    .zp.compact svg.stage{ touch-action:auto; }
+    .zp.no-cones #coverage, .zp.no-cones #sensors{ display:none; }
+    .zp.no-names .zone-tag{ display:none; }
+    .snap-line{ stroke:var(--c-teal); stroke-width:1.6; stroke-dasharray:7 6; opacity:.8; pointer-events:none; }
+    .snap-pt{ fill:none; stroke:var(--c-teal); stroke-width:3; pointer-events:none; }
     /* nur die Ebene des aktiven Modus nimmt Klicks an – nichts verdeckt die Griffe */
     #persons, #raw, #coverage{ pointer-events:none; }
     .zp:not([data-mode="zones"]) #zones, .zp:not([data-mode="sensors"]) #sensors{ pointer-events:none; }
@@ -1152,10 +1459,91 @@ class ZonePresenceCard extends HTMLElement {
       .stage-wrap{ order:1; }
       .zp.guide-collapsed .guide{ width:auto; flex-basis:auto; min-height:46px; }
       .zp.guide-collapsed .guide-inner{ height:0; padding:0; opacity:0; }
-      .zp.guide-collapsed .guide::before{ content:"Bedienung"; position:absolute; left:16px; top:14px; font-size:13px; color:var(--c-muted); }
+      .zp.guide-collapsed .guide::before{ content:attr(data-label); position:absolute; left:16px; top:14px; font-size:13px; color:var(--c-muted); }
       .p-grid{ grid-template-columns:1fr; }
       .topbar, .tabs, .toolbar, .ctxbar{ padding-left:14px; padding-right:14px; }
     }`;
+  }
+}
+
+/* ===================================================== Raum-Karte (nur Grundriss) */
+// type: custom:zone-presence-room-card
+//   room: <Name oder ID>        (leer = erster Raum)
+//   show_cones: true|false      (Sensoren + Erfassungskegel)
+//   show_names: true|false      (Zonennamen/Zähler)
+class ZonePresenceRoomCard extends ZonePresenceCard {
+  constructor() { super(); this._compact = true; }
+  connectedCallback() { this.classList.add("zp-room-host"); super.connectedCallback(); }
+  setConfig(config) { super.setConfig(Object.assign({ show_cones: true, show_names: true }, config || {})); }
+  static getStubConfig() { return { show_cones: true, show_names: true }; }
+  static getConfigElement() { return document.createElement("zone-presence-room-card-editor"); }
+  getCardSize() { return 6; }
+  // Sections-Ansicht: frei in Breite und Höhe skalierbar
+  getGridOptions() { return { columns: 6, rows: 4, min_columns: 2, min_rows: 2 }; }
+  _onMsg(m) {
+    // Raum aus der Konfiguration bleibt fest (keine Tabs in dieser Karte)
+    if (m.type === "config" && this._config.room) {
+      const r = m.rooms.find((x) => x.id === this._config.room || x.name === this._config.room);
+      if (r) this._activeRoom = r.id;
+    }
+    super._onMsg(m);
+  }
+}
+
+class ZonePresenceRoomCardEditor extends HTMLElement {
+  setConfig(config) { this._config = Object.assign({}, config || {}); this._render(); }
+  set hass(h) {
+    this._hass = h;
+    if (!this._rooms && !this._loading) this._load();
+    this._render();
+  }
+  get _lang() { const h = this._hass; return normLang(h && ((h.locale && h.locale.language) || h.language)); }
+  _t(k) { return I18N[this._lang][k] || I18N.en[k] || k; }
+  async _load() {
+    this._loading = true;
+    try { const cfg = await this._hass.callWS({ type: `${DOMAIN}/config` }); this._rooms = cfg.rooms || []; this._err = false; }
+    catch (e) { this._rooms = []; this._err = true; }
+    this._loading = false;
+    this._render();
+  }
+  _changed(patch) {
+    const c = Object.assign({}, this._config, patch);
+    if (!c.room) delete c.room;
+    this._config = c;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
+  }
+  _render() {
+    if (!this._hass || !this._config) return;
+    const c = this._config;
+    const rooms = this._rooms || [];
+    const data = { room: rooms.some((r) => r.id === c.room) ? c.room : (rooms.find((r) => r.name === c.room) || {}).id || "",
+      show_cones: c.show_cones !== false, show_names: c.show_names !== false };
+    if (customElements.get("ha-form")) {
+      if (!this._form) {
+        this._form = document.createElement("ha-form");
+        this._form.addEventListener("value-changed", (ev) => this._changed(ev.detail.value));
+        this._note = document.createElement("div");
+        this._note.style.cssText = "color:var(--secondary-text-color);font-size:13px;margin-bottom:8px";
+        this.append(this._note, this._form);
+      }
+      this._note.textContent = this._loading ? this._t("ed_loading") : this._err ? this._t("ed_error") : "";
+      this._form.hass = this._hass;
+      this._form.data = data;
+      this._form.schema = [
+        { name: "room", selector: { select: { mode: "dropdown", options: [{ value: "", label: this._t("ed_first") }].concat(rooms.map((r) => ({ value: r.id, label: r.name }))) } } },
+        { name: "show_cones", selector: { boolean: {} } },
+        { name: "show_names", selector: { boolean: {} } },
+      ];
+      this._form.computeLabel = (sch) => this._t({ room: "ed_room", show_cones: "ed_cones", show_names: "ed_names" }[sch.name]);
+      return;
+    }
+    // Rückfall ohne ha-form (z. B. außerhalb von Home Assistant)
+    this.innerHTML = `<div style="display:grid;gap:10px;font-family:inherit">
+      ${this._loading ? `<div>${esc(this._t("ed_loading"))}</div>` : this._err ? `<div>${esc(this._t("ed_error"))}</div>` : ""}
+      <label>${esc(this._t("ed_room"))} <select data-k="room"><option value="">${esc(this._t("ed_first"))}</option>${rooms.map((r) => `<option value="${esc(r.id)}"${r.id === data.room ? " selected" : ""}>${esc(r.name)}</option>`).join("")}</select></label>
+      <label><input type="checkbox" data-k="show_cones"${data.show_cones ? " checked" : ""}> ${esc(this._t("ed_cones"))}</label>
+      <label><input type="checkbox" data-k="show_names"${data.show_names ? " checked" : ""}> ${esc(this._t("ed_names"))}</label></div>`;
+    this.querySelectorAll("[data-k]").forEach((el) => el.addEventListener("change", () => this._changed({ [el.dataset.k]: el.type === "checkbox" ? el.checked : el.value })));
   }
 }
 
@@ -1181,7 +1569,7 @@ class ZonePresencePanel extends HTMLElement {
     body.className = "zpp-body";
     this._card = document.createElement("zone-presence-card");
     this._card.setAttribute("panel", "");
-    this._card.setConfig({ entry_id: cfg.entry_id, title: (this._panel && this._panel.title) || "Präsenz-Zonen" });
+    this._card.setConfig({ entry_id: cfg.entry_id, title: (this._panel && this._panel.title) || "" });
     if (this._hass) this._card.hass = this._hass;
     body.appendChild(this._card);
     this.append(style, head, body);
@@ -1190,9 +1578,15 @@ class ZonePresencePanel extends HTMLElement {
 
 if (!customElements.get("zone-presence-card")) customElements.define("zone-presence-card", ZonePresenceCard);
 if (!customElements.get("zone-presence-panel")) customElements.define("zone-presence-panel", ZonePresencePanel);
+if (!customElements.get("zone-presence-room-card")) customElements.define("zone-presence-room-card", ZonePresenceRoomCard);
+if (!customElements.get("zone-presence-room-card-editor")) customElements.define("zone-presence-room-card-editor", ZonePresenceRoomCardEditor);
 window.customCards = window.customCards || [];
 if (!window.customCards.find((c) => c.type === "zone-presence-card")) {
-  window.customCards.push({ type: "zone-presence-card", name: "Zone Presence Detection", description: "Live-Grundriss mit Zonen, Personen und Kalibrierung (Zone Presence Detection by Kilian K.)", preview: false });
+  window.customCards.push({ type: "zone-presence-card", name: "Zone Presence Detection", description: I18N[normLang(navigator.language)].card_desc, preview: false });
+}
+if (!window.customCards.find((c) => c.type === "zone-presence-room-card")) {
+  const L = I18N[normLang(navigator.language)];
+  window.customCards.push({ type: "zone-presence-room-card", name: L.room_card_name, description: L.room_card_desc, preview: true });
 }
 console.info("%c Zone Presence Detection %c " + VERSION + " ", "background:#2dd4bf;color:#04110f;border-radius:4px 0 0 4px", "background:#0f2227;color:#2dd4bf;border-radius:0 4px 4px 0");
 })();

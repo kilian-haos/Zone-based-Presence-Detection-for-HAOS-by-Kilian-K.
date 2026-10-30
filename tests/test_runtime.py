@@ -37,7 +37,7 @@ def wiring(sid: str, prefix: str, name: str) -> dict:
 OPTIONS = {
     "sensors": [wiring("s1", "ess", "Esszimmer"), wiring("s2", "wz", "Wohnzimmer")],
     "settings": {"confirm_time": 0, "off_delay": 10},
-    "panel": True, "panel_title": "Präsenz-Zonen", "edit_pin": "1234",
+    "panel": True, "panel_title": "", "edit_pin": "1234",
 }
 
 
@@ -62,6 +62,69 @@ class RuntimeTest(unittest.TestCase):
         self.rt = runtime_mod.ZonePresenceRuntime(self.hass, self.entry)
         run(self.rt.async_setup())
 
+    def _make(self, system_language="en", **opts):
+        storage.STORES.clear()
+        o = json.loads(json.dumps(OPTIONS))
+        o.update(opts)
+        rt = runtime_mod.ZonePresenceRuntime(ha_stub.FakeHass(system_language), ha_stub.FakeEntry(o, "entry2"))
+        run(rt.async_setup())
+        return rt
+
+    def test_language_follows_system_english(self):
+        self.assertEqual(self.rt.lang, "en")
+        self.assertEqual(self.rt.data["rooms"][0]["name"], "Room 1")
+        self.assertEqual(self.rt.config_payload()["language"], "en")
+        self.rt.engine.cal_result = {"cells": 7}
+        self.rt.engine.cal_status = "done"
+        self.rt._on_calibration_finished()
+        self.assertIn("7 ghost cells", ha_stub.NOTIFICATIONS[-1]["message"])
+
+    def test_language_follows_system_german(self):
+        for code in ("de", "de-CH", "de_AT"):
+            self.assertEqual(self._make(system_language=code).lang, "de", code)
+        rt = self._make(system_language="de")
+        self.assertEqual(rt.data["rooms"][0]["name"], "Raum 1")
+        self.assertEqual(rt.config_payload()["language"], "de")
+        rt.engine.cal_result = {"cells": 3, "disturbed_ratio": 0.4}
+        rt.engine.cal_status = "disturbed"
+        rt._on_calibration_finished()
+        self.assertIn("40 % durch bewegte Personen", ha_stub.NOTIFICATIONS[-1]["message"])
+
+    def test_language_other_falls_back_to_english(self):
+        for code in ("fr", "nl", "en-GB", "", None):
+            self.assertEqual(self._make(system_language=code).lang, "en", code)
+
+    def test_old_language_option_ignored(self):
+        # Option "language" aus 1.0.0 hat keine Wirkung mehr – maßgeblich ist Home Assistant
+        self.assertEqual(self._make("en", **{"language": "de"}).lang, "en")
+        self.assertEqual(self._make("de", **{"language": "en"}).lang, "de")
+
+    def test_edit_rights(self):
+        admin, user = ha_stub.FakeUser(True), ha_stub.FakeUser(False)
+        self.assertTrue(self.rt.can_edit(admin))
+        self.assertFalse(self.rt.can_edit(user))
+        self.assertFalse(self.rt.can_edit(None))
+        self.assertFalse(self.rt.config_payload()["allow_user_edit"])
+        rt = self._make(allow_user_edit=True)
+        self.assertTrue(rt.can_edit(user))
+        self.assertTrue(rt.config_payload()["allow_user_edit"])
+
+    def test_migration_1_2(self):
+        mig = runtime_mod.migrate_options_1_2
+        old = {"settings": {"wall_tolerance": 0.3, "off_delay": 12}, "language": "de", "edit_pin": "1234"}
+        new = mig(old)
+        self.assertEqual(new["settings"]["wall_tolerance"], 1.2)
+        self.assertEqual(new["settings"]["off_delay"], 12)
+        self.assertNotIn("language", new)
+        self.assertEqual(new["edit_pin"], "1234")          # gesetzter PIN bleibt
+        self.assertFalse(new["allow_user_edit"])
+        self.assertEqual(mig({"settings": {"wall_tolerance": 0.8}})["settings"]["wall_tolerance"], 0.8)
+        self.assertEqual(runtime_mod.Settings().wall_tolerance, 1.2)
+
+    def test_pin_default_off(self):
+        const = __import__("zpe.const", fromlist=["DEFAULT_PIN"])
+        self.assertEqual(const.DEFAULT_PIN, "")
+
     def test_setup_defaults(self):
         d = self.rt.data
         self.assertEqual([r["id"] for r in d["rooms"]], ["r1"])
@@ -69,8 +132,8 @@ class RuntimeTest(unittest.TestCase):
         self.assertEqual(d["geometry"]["s2"]["label"], "S2")
         self.assertEqual(d["geometry"]["s2"]["room"], "r1")
         names = sorted(dev.name for dev in dr.DEV_REG.devices.values())
-        self.assertEqual(names, ["Raum 1", "Zone Presence Detection"])
-        room_dev = next(d for d in dr.DEV_REG.devices.values() if d.name == "Raum 1")
+        self.assertEqual(names, ["Room 1", "Zone Presence Detection"])
+        room_dev = next(d for d in dr.DEV_REG.devices.values() if d.name == "Room 1")
         hub = next(d for d in dr.DEV_REG.devices.values() if d.name == "Zone Presence Detection")
         self.assertEqual(room_dev.via_device_id, hub.id, "Raum hängt unter dem Hub (via_device_id)")
         self.assertIn("zone_presence.entry1", storage.STORES)

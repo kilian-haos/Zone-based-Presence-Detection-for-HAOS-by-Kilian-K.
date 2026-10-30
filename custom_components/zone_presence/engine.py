@@ -53,7 +53,7 @@ class Settings:
     zone_exit_margin: float = 0.2    # m Austritts-Hysterese der Zonen
     still_exit_margin: float = 0.45  # m Austritts-Hysterese im Sitz-/Liege-Modus
     wall_filter: bool = True         # Targets hinter Wänden verwerfen
-    wall_tolerance: float = 0.3      # m bis hierhin an die Wand klemmen statt verwerfen
+    wall_tolerance: float = 1.2      # m bis hierhin an die Wand klemmen statt verwerfen
     max_speed: float = 3.0           # m/s plausible Höchstgeschwindigkeit
     ghost_filter: bool = True
     ghost_strength: int = 50         # 0..100

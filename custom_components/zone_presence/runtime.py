@@ -26,6 +26,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CONF_ALLOW_USER_EDIT,
     CONF_SENSORS,
     CONF_SETTINGS,
     DEBOUNCE,
@@ -46,6 +47,7 @@ from .const import (
 )
 from .engine import Engine, Settings, parse_rooms, parse_sensor, parse_zones
 from .geometry import centroid, poly_valid
+from .i18n import system_lang, tr
 
 _LOGGER = logging.getLogger(__name__)
 # Ab HA 2026.8 wird das übergeordnete Gerät per Geräte-ID angegeben (via_device_id)
@@ -53,7 +55,7 @@ _VIA_BY_ID = "via_device_id" in getattr(dr.DeviceInfo, "__optional_keys__", ())
 _ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,40}$")
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
-DEFAULT_ROOM = {"id": "r1", "name": "Raum 1", "polygon": [[0, 0], [5, 0], [5, 4], [0, 4]]}
+DEFAULT_ROOM_POLY = [[0, 0], [5, 0], [5, 4], [0, 4]]
 
 
 def _num(v: Any, default: float, lo: float | None = None, hi: float | None = None) -> float:
@@ -92,12 +94,25 @@ def _clean_color(v: Any, default: str) -> str:
     return s if re.match(r"^#[0-9a-fA-F]{3,8}$", s) else default
 
 
+def migrate_options_1_2(options: Any) -> dict:
+    """Optionen 1.0 -> 1.1: Wandtoleranz-Standard 0,3 -> 1,2 m, Sprache automatisch, Bearbeiten-Freigabe."""
+    opts = dict(options or {})
+    settings = dict(opts.get(CONF_SETTINGS) or {})
+    if settings.get("wall_tolerance") in (None, 0.3):   # nur den alten Standard ersetzen
+        settings["wall_tolerance"] = 1.2
+    opts[CONF_SETTINGS] = settings
+    opts.pop("language", None)
+    opts.setdefault(CONF_ALLOW_USER_EDIT, False)
+    return opts
+
+
 class ZonePresenceRuntime:
     """Eine Instanz je Config-Entry."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
+        self.lang = system_lang(hass)
         self.store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.{entry.entry_id}")
         self.model_store: Store[dict] = Store(hass, MODEL_STORE_VERSION, f"{DOMAIN}.{entry.entry_id}.model")
         self.engine = Engine(Settings.from_dict(entry.options.get(CONF_SETTINGS)))
@@ -118,6 +133,19 @@ class ZonePresenceRuntime:
     @property
     def wiring(self) -> list[dict]:
         return list(self.entry.options.get(CONF_SENSORS, []))
+
+    @property
+    def allow_user_edit(self) -> bool:
+        return bool(self.entry.options.get(CONF_ALLOW_USER_EDIT, False))
+
+    def can_edit(self, user: Any) -> bool:
+        """Admins immer; andere Benutzer nur, wenn in den Optionen freigegeben."""
+        if user is None:
+            return False
+        return bool(user.is_admin) or self.allow_user_edit
+
+    def t(self, key: str, **kw: Any) -> str:
+        return tr(self.lang, key, **kw)
 
     async def async_setup(self) -> None:
         raw = await self.store.async_load() or {}
@@ -180,7 +208,7 @@ class ZonePresenceRuntime:
             if poly and _ID_RE.match(rid):
                 rooms.append({"id": rid, "name": _clean_str(r.get("name"), rid), "polygon": poly})
         if not rooms:
-            rooms = [dict(DEFAULT_ROOM)]
+            rooms = [{"id": "r1", "name": self.t("room", n=1), "polygon": [list(p) for p in DEFAULT_ROOM_POLY]}]
         controls = {
             "cal_time": DEFAULT_CAL_TIME, "cal_duration": DEFAULT_CAL_DURATION,
             "cal_armed": False, "learning": True,
@@ -353,6 +381,8 @@ class ZonePresenceRuntime:
         return {
             "entry_id": self.entry.entry_id,
             "pin": str(self.entry.options.get(CONF_PIN, DEFAULT_PIN) or ""),
+            "language": self.lang,
+            "allow_user_edit": self.allow_user_edit,
             "rooms": self.data["rooms"],
             "zones": self.data["zones"],
             "sensors": sensors,
@@ -370,11 +400,11 @@ class ZonePresenceRuntime:
                 rid = str(r.get("id") or "")
                 poly = _clean_poly(r.get("polygon"))
                 if not _ID_RE.match(rid) or rid in seen or not poly:
-                    raise ValueError(f"Ungültiger Raum: {rid or r}")
+                    raise ValueError(f"Invalid room: {rid or r}")
                 seen.add(rid)
                 rooms.append({"id": rid, "name": _clean_str(r.get("name"), rid), "polygon": poly})
             if not rooms:
-                raise ValueError("Mindestens ein Raum ist nötig")
+                raise ValueError("At least one room is required")
             self.data["rooms"] = rooms
         if "zones" in payload:
             old = {z.get("id"): z for z in self.data["zones"]}
@@ -384,7 +414,7 @@ class ZonePresenceRuntime:
                 zid = str(z.get("id") or "")
                 pts = _clean_poly(z.get("points"))
                 if not _ID_RE.match(zid) or not pts or any(x["id"] == zid for x in zones):
-                    raise ValueError(f"Ungültige Zone: {zid or z}")
+                    raise ValueError(f"Invalid zone: {zid or z}")
                 num = int(_num(z.get("num") or (old.get(zid) or {}).get("num"), 0))
                 if num <= 0 or num in used:
                     num = 0
@@ -519,13 +549,13 @@ class ZonePresenceRuntime:
         dev_reg = dr.async_get(self.hass)
         dev_reg.async_get_or_create(
             config_entry_id=self.entry.entry_id, identifiers={self.hub_device_id},
-            name="Zone Presence Detection", manufacturer=MANUFACTURER, model="Hub",
+            name="Zone Presence Detection", manufacturer=MANUFACTURER, model=self.t("model_hub"),
             sw_version=VERSION, entry_type=dr.DeviceEntryType.SERVICE,
         )
         for rid, room in self.engine.rooms.items():
             dev_reg.async_get_or_create(
                 config_entry_id=self.entry.entry_id, identifiers={self.room_device_id(rid)},
-                name=room.name, manufacturer=MANUFACTURER, model="Raum", **self.via_kwargs(self.hub_device_id),
+                name=room.name, manufacturer=MANUFACTURER, model=self.t("model_room"), **self.via_kwargs(self.hub_device_id),
             )
 
     @callback
@@ -596,7 +626,7 @@ class ZonePresenceRuntime:
         self.engine.calibration_start(time.monotonic(), minutes * 60)
         self.data["cal_last"] = {"status": "running", "started": dt_util.utcnow().isoformat(), "duration_min": minutes}
         self.store.async_delay_save(self._data_to_save, 1)
-        _LOGGER.info("Lernkalibrierung gestartet (%s min)", minutes)
+        _LOGGER.info("Learning calibration started (%s min)", minutes)
         self._compute()
 
     @callback
@@ -618,11 +648,9 @@ class ZonePresenceRuntime:
         self.store.async_delay_save(self._data_to_save, 1)
         self.model_store.async_delay_save(self._model_to_save, 1)
         if status == "disturbed":
-            msg = (f"Die Lernkalibrierung ist abgeschlossen, war aber zu {round(res.get('disturbed_ratio', 0) * 100)} % "
-                   "durch bewegte Personen gestört. Gelernt wurden nur die ungestörten Anteile "
-                   f"({res.get('cells', 0)} Zellen). Für ein besseres Ergebnis bei leerem Raum wiederholen.")
+            msg = self.t("cal_disturbed", pct=round((res.get("disturbed_ratio") or 0) * 100), cells=res.get("cells", 0))
         else:
-            msg = f"Die Lernkalibrierung ist abgeschlossen. {res.get('cells', 0)} Geister-Zellen wurden gelernt."
+            msg = self.t("cal_done", cells=res.get("cells", 0))
         persistent_notification.async_create(
             self.hass, msg, title="Zone Presence Detection", notification_id=f"{DOMAIN}_calibration",
         )
@@ -651,7 +679,7 @@ class ZonePresenceRuntime:
         c = self.data["controls"]
         if key == "cal_time":
             if not _TIME_RE.match(str(value)):
-                raise ValueError("Ungültige Uhrzeit")
+                raise ValueError("Invalid time")
             c["cal_time"] = str(value)
             self._schedule_cal_listener()
         elif key == "cal_duration":
@@ -702,7 +730,7 @@ class ZonePresenceRuntime:
         for i in range(1, int(opts.get("max_rooms", 4)) + 1):
             o = load(f"{opts['room_prefix']}{i}")
             if o and _clean_poly(o.get("p")):
-                rooms.append({"id": f"r{i}", "name": _clean_str(o.get("n"), f"Raum {i}"), "polygon": _clean_poly(o["p"])})
+                rooms.append({"id": f"r{i}", "name": _clean_str(o.get("n"), self.t("room", n=i)), "polygon": _clean_poly(o["p"])})
         if not rooms:
             rooms = list(self.data["rooms"])
         room_ids = {r["id"] for r in rooms}
@@ -713,7 +741,7 @@ class ZonePresenceRuntime:
             rid = f"r{o.get('r', 1)}"
             zones.append({
                 "id": f"z{i}", "num": i, "room": rid if rid in room_ids else rooms[0]["id"],
-                "name": _clean_str(o.get("n"), f"Zone {i}"), "color": _clean_color(o.get("c"), ZONE_COLORS[(i - 1) % 8]),
+                "name": _clean_str(o.get("n"), self.t("zone", n=i)), "color": _clean_color(o.get("c"), ZONE_COLORS[(i - 1) % 8]),
                 "enabled": o.get("e") is not False, "points": _clean_poly(o["p"]), "extra": o.get("x") or [],
                 "off_delay": None,
             })

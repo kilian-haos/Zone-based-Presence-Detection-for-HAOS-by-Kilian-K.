@@ -1,4 +1,4 @@
-"""Einrichtung (Config Flow) und Optionen (Sensoren, Einstellungen, Darstellung)."""
+"""Config flow and options (sensors, settings, display & editing)."""
 from __future__ import annotations
 
 import re
@@ -8,16 +8,17 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_ALLOW_USER_EDIT,
     CONF_PANEL,
     CONF_PANEL_TITLE,
     CONF_PIN,
     CONF_SENSORS,
     CONF_SETTINGS,
-    DEFAULT_PANEL_TITLE,
     DEFAULT_PIN,
     DOMAIN,
     NAME,
@@ -29,6 +30,12 @@ TARGET_KEYS = [f"target{n}_{a}" for n in (1, 2, 3) for a in ("x", "y")]
 
 _SENSOR_SEL = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
 _PRESENCE_SEL = selector.EntitySelector(selector.EntitySelectorConfig(domain="binary_sensor"))
+SECTION_EDIT = "editing"
+
+
+def _title(value: Any) -> str:
+    """Empty panel title = default title in the chosen language."""
+    return str(value or "").strip()[:40]
 
 
 def _norm(text: str | None) -> str:
@@ -179,6 +186,7 @@ def settings_schema(s: dict[str, Any]) -> vol.Schema:
 # ====================================================================== Einrichtung
 class ZonePresenceConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2
 
     def __init__(self) -> None:
         self._options: dict[str, Any] = {}
@@ -192,8 +200,9 @@ class ZonePresenceConfigFlow(ConfigFlow, domain=DOMAIN):
                 CONF_SENSORS: [],
                 CONF_SETTINGS: Settings().as_dict(),
                 CONF_PANEL: user_input[CONF_PANEL],
-                CONF_PANEL_TITLE: user_input.get(CONF_PANEL_TITLE) or DEFAULT_PANEL_TITLE,
+                CONF_PANEL_TITLE: _title(user_input.get(CONF_PANEL_TITLE)),
                 CONF_PIN: DEFAULT_PIN,
+                CONF_ALLOW_USER_EDIT: False,
             }
             if user_input.get("add_sensor"):
                 return await self.async_step_sensor_device()
@@ -203,7 +212,7 @@ class ZonePresenceConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Required("add_sensor", default=True): selector.BooleanSelector(),
                 vol.Required(CONF_PANEL, default=True): selector.BooleanSelector(),
-                vol.Required(CONF_PANEL_TITLE, default=DEFAULT_PANEL_TITLE): selector.TextSelector(),
+                vol.Optional(CONF_PANEL_TITLE): selector.TextSelector(),
             }),
         )
 
@@ -260,8 +269,10 @@ class ZonePresenceOptionsFlow(OptionsFlow):
         o[CONF_SENSORS] = [dict(s) for s in o.get(CONF_SENSORS, [])]
         o.setdefault(CONF_SETTINGS, Settings().as_dict())
         o.setdefault(CONF_PANEL, True)
-        o.setdefault(CONF_PANEL_TITLE, DEFAULT_PANEL_TITLE)
+        o.setdefault(CONF_PANEL_TITLE, "")
+        o.pop("language", None)  # bis 1.0.0: manuelle Sprache, jetzt automatisch
         o.setdefault(CONF_PIN, DEFAULT_PIN)
+        o.setdefault(CONF_ALLOW_USER_EDIT, False)
         return o
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -341,24 +352,39 @@ class ZonePresenceOptionsFlow(OptionsFlow):
         opts = self._opts()
         errors: dict[str, str] = {}
         if user_input is not None:
-            pin = str(user_input.get(CONF_PIN) or "").strip()
+            edit = user_input.get(SECTION_EDIT) or {}
+            pin = str(edit.get(CONF_PIN) or "").strip()
             if pin and not re.fullmatch(r"\d{4}", pin):
-                errors[CONF_PIN] = "invalid_pin"
+                errors["base"] = "invalid_pin"
             else:
                 opts[CONF_PANEL] = user_input[CONF_PANEL]
-                opts[CONF_PANEL_TITLE] = user_input.get(CONF_PANEL_TITLE) or DEFAULT_PANEL_TITLE
+                opts[CONF_PANEL_TITLE] = _title(user_input.get(CONF_PANEL_TITLE))
                 opts[CONF_PIN] = pin
+                opts[CONF_ALLOW_USER_EDIT] = bool(edit.get(CONF_ALLOW_USER_EDIT))
                 return self.async_create_entry(data=opts)
         return self.async_show_form(
             step_id="display",
-            data_schema=vol.Schema({
-                vol.Required(CONF_PANEL, default=opts[CONF_PANEL]): selector.BooleanSelector(),
-                vol.Required(CONF_PANEL_TITLE, default=opts[CONF_PANEL_TITLE]): selector.TextSelector(),
-                vol.Optional(CONF_PIN, description={"suggested_value": opts.get(CONF_PIN, DEFAULT_PIN)}):
-                    selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
-            }),
+            data_schema=display_schema(opts),
             errors=errors,
         )
+
+
+def display_schema(opts: dict[str, Any]) -> vol.Schema:
+    """Darstellung + Bearbeiten-Abschnitt (der Hinweis steht als Abschnittsbeschreibung direkt über dem PIN)."""
+    return vol.Schema({
+        vol.Required(CONF_PANEL, default=opts[CONF_PANEL]): selector.BooleanSelector(),
+        vol.Optional(CONF_PANEL_TITLE, description={"suggested_value": opts[CONF_PANEL_TITLE]}):
+            selector.TextSelector(),
+        vol.Required(SECTION_EDIT): section(
+            vol.Schema({
+                vol.Optional(CONF_PIN, description={"suggested_value": opts.get(CONF_PIN, DEFAULT_PIN)}):
+                    selector.TextSelector(selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)),
+                vol.Required(CONF_ALLOW_USER_EDIT, default=bool(opts.get(CONF_ALLOW_USER_EDIT))):
+                    selector.BooleanSelector(),
+            }),
+            {"collapsed": False},
+        ),
+    })
 
 
 def _pick_schema(sensors: list[dict]) -> vol.Schema:

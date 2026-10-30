@@ -70,6 +70,37 @@ class TranslationTest(unittest.TestCase):
         registered = set(re.findall(r'SERVICE_\w+ = "(\w+)"', (PKG / "services.py").read_text()))
         self.assertEqual(registered, set(services))
 
+    def test_card_i18n_same_keys(self):
+        card = (PKG / "frontend" / "zone-presence-card.js").read_text()
+        block = card[card.index("const I18N = {"):card.index("const normLang")]
+        en_part, de_part = block.split("\n  de: {")
+
+        def keys(part):
+            return set(re.findall(r'(?:^|[\s,{])(\w+): "', part))
+
+        self.assertGreater(len(keys(en_part)), 60)
+        self.assertEqual(keys(en_part), keys(de_part))
+        used = set(re.findall(r'_t\("(\w+)"', card)) | set(re.findall(r'\bt\("(\w+)"\)', card))
+        self.assertEqual(used - keys(en_part), set())
+
+    def test_backend_i18n_same_keys(self):
+        i18n = importlib.import_module("zpe.i18n")
+        self.assertEqual(set(i18n.STRINGS["en"]), set(i18n.STRINGS["de"]))
+        self.assertEqual(i18n.norm_lang(None), "en")
+        self.assertEqual(i18n.norm_lang("de-DE"), "de")
+
+    def test_display_section(self):
+        flow = (PKG / "config_flow.py").read_text()
+        self.assertIn('SECTION_EDIT = "editing"', flow)
+        self.assertNotIn("CONF_LANGUAGE", flow)
+        for lang in ("de", "en"):
+            disp = self.tr[lang]["options"]["step"]["display"]
+            sec = disp["sections"]["editing"]
+            self.assertEqual(set(sec["data"]), {"edit_pin", "allow_user_edit"}, lang)
+            self.assertIn("PIN", sec["description"])
+            self.assertNotIn("language", disp["data"])
+            self.assertNotIn("language", self.tr[lang]["config"]["step"]["user"]["data"])
+
     def test_manifest(self):
         m = json.loads((PKG / "manifest.json").read_text())
         keys = list(m)
