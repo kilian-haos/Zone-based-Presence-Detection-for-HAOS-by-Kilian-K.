@@ -257,9 +257,74 @@ class RuntimeTest(unittest.TestCase):
     def test_learning_switch_and_reset(self):
         self.rt.set_control("learning", False)
         self.assertFalse(self.rt.engine.learning_enabled)
-        self.rt.engine.model.maps["s1"].ghost[5] = 2.0
+        self.rt.engine.model.maps["s1"].add_ghost(1.0, 2.0, 2.0)
+        self.assertGreater(self.rt.engine.model.maps["s1"].ghost_prob(1.0, 2.0), 0.5)
         self.rt.reset_model()
-        self.assertEqual(self.rt.engine.model.maps["s1"].ghost, {})
+        self.assertEqual(self.rt.engine.model.maps["s1"].ghost_prob(1.0, 2.0), 0.0)
+
+    def test_exclusions_apply_and_payload(self):
+        ex = [{"id": "x1", "room": "r1", "name": "Ventilator", "points": [[1, 1], [2, 1], [2, 2], [1, 2]], "depth": 0.4, "learn": True}]
+        self.rt.apply({"exclusions": ex}, True)
+        p = self.rt.config_payload()
+        self.assertEqual(p["exclusions"][0]["depth"], 0.4)
+        self.assertTrue(p["exclusions"][0]["learn"])
+        self.assertEqual(p["excl_color"], "#ff3b3b")
+        self.assertNotIn(p["excl_color"], p["zone_colors"])
+        self.assertIn("x1", self.rt.engine.exclusions)
+        self.assertEqual(self.rt.zone_ids, set(), "Sperrzonen bekommen keine Entitäten")
+        with self.assertRaises(ValueError):
+            self.rt.apply({"exclusions": [{"id": "bad id!", "room": "r1", "points": [[0, 0], [1, 0], [1, 1]]}]}, True)
+        # Raum gelöscht -> seine Sperrzonen auch
+        self.rt.apply({"rooms": [{"id": "r9", "name": "X", "polygon": [[0, 0], [3, 0], [3, 3], [0, 3]]}]}, True)
+        self.assertEqual(self.rt.data["exclusions"], [])
+
+    def test_auto_zone_colors_never_exclusion_red(self):
+        zones = [{"id": f"z{i}", "room": "r1", "name": "Z", "points": [[1, 1], [2, 1], [2, 2], [1, 2]]} for i in range(10)]
+        self.rt.apply({"zones": zones}, True)
+        self.assertTrue(all(z["color"] != "#ff3b3b" for z in self.rt.data["zones"]))
+
+    def test_model_view_forget_export_import(self):
+        m = self.rt.engine.model
+        for _ in range(10):
+            m.learn_ghost("s1", 0.0, 2.0, 1.0)
+        rid = self.rt.data["rooms"][0]["id"]
+        view = run(self.rt.async_model_view(rid, history=True))
+        self.assertIn("spots", view)
+        self.assertIn("history", view)
+        self.assertEqual(view["level"], 2)
+        exp = json.loads(json.dumps(self.rt.model_export()))
+        self.rt.reset_model()
+        self.assertEqual(m.maps["s1"].ghost_prob(0.0, 2.0), 0.0)
+        res = self.rt.model_import(exp)
+        self.assertIn("s1", res["sensors"])
+        self.assertGreater(self.rt.engine.model.maps["s1"].ghost_prob(0.0, 2.0), 0.5)
+        with self.assertRaises(ValueError):
+            self.rt.model_import({"foo": 1})
+        with self.assertRaises(ValueError):
+            run(self.rt.async_model_view("nope"))
+
+    def test_old_model_store_migrated(self):
+        storage.STORES.clear()
+        idx = 8 * 48 + 28
+        storage.STORES["zone_presence.entry2.model"] = {"maps": {"s1": {"range": 6.0, "cell": 0.25,
+                                                                         "cal": {str(idx): 3.0}, "ghost": {}, "real": {}}}}
+        o = json.loads(json.dumps(OPTIONS))
+        rt = runtime_mod.ZonePresenceRuntime(ha_stub.FakeHass(), ha_stub.FakeEntry(o, "entry2"))
+        run(rt.async_setup())
+        self.assertGreater(rt.engine.model.maps["s1"].ghost_prob(1.12, 2.12), 0.8)
+        self.assertEqual(rt._model_to_save()["version"], 2)
+
+    def test_rate_alarm_notification(self):
+        m = self.rt.engine.model
+        m.daily["s1"] = {f"2026-01-0{d}": [5.0, 20.0, 0.0] for d in range(1, 8)}
+        m.set_day("2026-01-09")
+        m.count("s1", 0, 80)
+        ha_stub.NOTIFICATIONS.clear()
+        self.rt._hourly(None)
+        self.assertTrue(ha_stub.NOTIFICATIONS)
+        n = len(ha_stub.NOTIFICATIONS)
+        self.rt._hourly(None)
+        self.assertEqual(len(ha_stub.NOTIFICATIONS), n, "nur einmal pro Tag")
 
     def test_reload_restores_state(self):
         self.rt.apply({"zones": [{"id": "za", "room": "r1", "name": "Sofa", "points": [[1, 1], [2, 1], [2, 2], [1, 2]]}]}, True)

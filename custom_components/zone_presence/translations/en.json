@@ -127,6 +127,7 @@
           "ghost_strength": "Ghost filter strength",
           "learning_speed": "Learning speed",
           "memory_days": "Memory (half-life)",
+          "compute_level": "Learning model compute level",
           "cal_max_spread": "Auto alignment: max. spread of measurements"
         },
         "data_description": {
@@ -146,6 +147,7 @@
           "ghost_strength": "Higher = ghost areas are treated more strictly.",
           "learning_speed": "How fast the model keeps learning during normal operation.",
           "memory_days": "After this time, knowledge learned during operation is half as strong. The learning calibration does not decay.",
+          "compute_level": "Level 1 = light (25 cm grid, one model for the whole day). Level 2 = balanced (15 cm grid, 4 time-of-day windows). Level 3 = maximum (10 cm grid, 8 time-of-day windows, denser time-lapse). When changing, what was learned is resampled, not deleted.",
           "cal_max_spread": "During alignment, sensors whose measurement is further away from the mean are ignored (different target)."
         }
       },
@@ -188,6 +190,13 @@
         "slow": "Slow",
         "normal": "Normal",
         "fast": "Fast"
+      }
+    },
+    "compute_level": {
+      "options": {
+        "1": "1 – Light",
+        "2": "2 – Balanced (recommended)",
+        "3": "3 – Maximum"
       }
     }
   },

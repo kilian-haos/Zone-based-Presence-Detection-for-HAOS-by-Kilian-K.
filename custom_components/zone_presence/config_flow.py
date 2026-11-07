@@ -178,6 +178,10 @@ def settings_schema(s: dict[str, Any]) -> vol.Schema:
              options=["slow", "normal", "fast"], translation_key="learning_speed",
              mode=selector.SelectSelectorMode.DROPDOWN))),
         num("memory_days", 0.5, 365, 0.5, "d"),
+        (vol.Required("compute_level", default=str(s["compute_level"])),
+         selector.SelectSelector(selector.SelectSelectorConfig(
+             options=["1", "2", "3"], translation_key="compute_level",
+             mode=selector.SelectSelectorMode.LIST))),
         num("cal_max_spread", 0.2, 10, 0.1, "m"),
     ]
     return vol.Schema(dict(items))

@@ -30,6 +30,9 @@ const cfg = {
       entities: { targets: [{ x: "sensor.wz_target1_x", y: "sensor.wz_target1_y" }], presence: null } },
   ],
   settings: { off_delay: 10 }, controls: { cal_duration: 120 },
+  exclusions: [{ id: "x1", room: "r1", name: "Ventilator", points: [[5.6,0.3],[6.6,0.3],[6.6,1.1],[5.6,1.1]], depth: 0.3, learn: false, enabled: true }],
+  excl_color: "#ff3b3b", zone_colors: ["#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#60a5fa", "#22d3ee", "#4ade80", "#c084fc"],
+  model: { level: 2, slots: 4 },
 };
 if (Q.get("canedit") != null) cfg.can_edit = Q.get("canedit") === "1";
 const subs = new Set();
@@ -44,8 +47,40 @@ function state() {
   ];
   const zones = {};
   for (const z of cfg.zones) { const n = persons.filter((p) => p.room === z.room && pip(p.x, p.y, z.points)).length; zones[z.id] = { on: n > 0, count: n }; }
+  const targets = [
+    { k: "s1:0", x: walker[0] + 0.05, y: walker[1] + 0.03, s: "s1", c: 0.95, ok: true, ex: false, pr: true },
+    { k: "s2:0", x: walker[0] - 0.06, y: walker[1] - 0.02, s: "s2", c: 0.93, ok: true, ex: false, pr: true },
+    { k: "s2:1", x: sitter[0], y: sitter[1], s: "s2", c: 0.9, ok: true, ex: false, pr: true },
+    { k: "s1:1", x: 1.0 + 0.2 * Math.sin(t * 7), y: 4.6, s: "s1", c: 0.22, ok: false, ex: false, pr: false },
+    { k: "s2:2", x: 6.1, y: 0.7, s: "s2", c: 0, ok: false, ex: true, pr: false },
+  ];
   return { type: "state", persons, zones, rooms: { r1: 2, r2: 0 }, cal: { status: "running", progress: 0.34, next: null },
-    candidates: [{ x: 1.0, y: 4.6, s: "s1", label: "S1T2", conf: 0.22 }], rejected: [{ x: 7.6, y: 2.0, s: "s2", r: "wall" }] };
+    candidates: [{ x: 1.0, y: 4.6, s: "s1", label: "S1T2", conf: 0.22 }], rejected: [{ x: 7.6, y: 2.0, s: "s2", r: "wall" }, { x: 6.1, y: 0.7, s: "s2", r: "excl" }], targets };
+}
+// Simuliertes Lernmodell (Raumraster wie aus model_view.py)
+function modelView(roomId, history) {
+  const room = cfg.rooms.find((r) => r.id === roomId) || cfg.rooms[0], poly = room.polygon, res = 0.2;
+  const xs = poly.map((p) => p[0]), ys = poly.map((p) => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const nx = Math.ceil((Math.max(...xs) - x0) / res), ny = Math.ceil((Math.max(...ys) - y0) / res);
+  const g = [], r = [], c = [], v = [], h = [];
+  const blob = (x, y, cx, cy, s) => Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / (2 * s * s));
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = x0 + (i + 0.5) * res, y = y0 + (j + 0.5) * res, ins = pip(x, y, poly);
+    if (!ins) { g.push(0); r.push(0); c.push(0); v.push(0); h.push(0); continue; }
+    const gg = Math.max(blob(x, y, 1.0, 4.6, 0.3) * 0.85, blob(x, y, 6.1, 0.7, 0.35) * 0.7);
+    const rr = Math.exp(-((y - 2.5) ** 2) / 0.3) * (x > 1 && x < 5.2 ? 0.8 : 0.2);
+    g.push(Math.round(gg * 100)); r.push(Math.round(rr * 100)); c.push(Math.round(Math.min(1, 0.2 + rr + gg) * 100));
+    v.push(x < 0.6 && y > 4.6 ? 0 : (x > 3 ? 2 : 1)); h.push(Math.round(blob(x, y, 5.2, 2.7, 0.5) * 100));
+  }
+  const out = { room: room.id, res, x0, y0, nx, ny, g, r, c, v, h, heat_max_s: 3600, level: 2, slots: 4, slot: 3,
+    spots: roomId === "r1" ? [{ x: 1.0, y: 4.6, peak: 0.85, area: 0.4, rect: [0.6, 4.2, 1.4, 5.0], near_wall: true, sensor: "s1", slot: [3, 4], cal: false },
+                              { x: 6.1, y: 0.7, peak: 0.7, area: 0.3, rect: [5.7, 0.3, 6.5, 1.1], near_wall: false, sensor: "s2", slot: null, cal: true }] : [],
+    stats: { check: { fp: 1, fn: 2, tp: 40, bias: 0.98 }, precision: 0.93, memory_kb: 412, snapshots: 6, learning: true,
+      daily: { s1: { [new Date().toISOString().slice(0, 10)]: [14, 120, 3000] } }, sensors: {} } };
+  if (history) out.history = { res: 0.25, x0, y0, nx: Math.ceil(nx * 0.8), ny: Math.ceil(ny * 0.8),
+    frames: [0, 1, 2, 3, 4, 5].map((k) => ({ ts: 1762500000 + k * 21600, g: Array(Math.ceil(nx * 0.8) * Math.ceil(ny * 0.8)).fill(0).map((_, i) => (i % 7 === k ? 60 : 0)), r: [] })) };
+  window.__modelCalls = (window.__modelCalls || 0) + 1;
+  return JSON.parse(JSON.stringify(out));
 }
 function broadcastConfig() { for (const cb of subs) cb({ type: "config", ...JSON.parse(JSON.stringify(cfg)) }); }
 let nextNum = 4;
@@ -65,6 +100,7 @@ const hass = {
     if (msg.type === "zone_presence/apply") {
       if (msg.rooms) cfg.rooms = msg.rooms;
       if (msg.zones) { cfg.zones = msg.zones.map((z) => ({ ...z, num: z.num || nextNum++ })); }
+      if (msg.exclusions) cfg.exclusions = msg.exclusions;
       if (msg.sensors) for (const [id, g] of Object.entries(msg.sensors)) Object.assign(cfg.sensors.find((s) => s.id === id), g);
       if (msg.persist) broadcastConfig();
       return msg.persist ? cfg : null;
@@ -72,6 +108,10 @@ const hass = {
     if (msg.type === "zone_presence/auto_calibrate") return { ok: true, sensors: { s1: { dx: 0.15, dy: 0.02 }, s2: { dx: -0.05, dy: 0 } } };
     if (msg.type === "zone_presence/calibration") return { status: "running", progress: 0 };
     if (msg.type === "zone_presence/config") return JSON.parse(JSON.stringify(cfg));
+    if (msg.type === "zone_presence/model_view") return modelView(msg.room_id, msg.history);
+    if (msg.type === "zone_presence/model_forget") return { cells: 12 };
+    if (msg.type === "zone_presence/model_export") return { integration: "zone_presence", version: "1.2.0", model: { version: 2, maps: {} } };
+    if (msg.type === "zone_presence/model_import") { if (!msg.data || msg.data.integration !== "zone_presence") throw new Error("Not a model"); return { sensors: ["s1", "s2"] }; }
     throw new Error("unbekannt " + msg.type);
   },
 };
@@ -99,8 +139,20 @@ window.__mountRoom = (config, w, h) => {
   window.__room = c;
   return true;
 };
-window.__mountEditor = (config) => {
-  const ed = document.createElement("zone-presence-room-card-editor");
+window.__mountModel = (config, w, h) => {
+  const box = document.createElement("div");
+  box.id = "modelbox";
+  box.style.cssText = `width:${w}px;height:${h}px;margin-top:12px;`;
+  const c = document.createElement("zone-presence-model-card");
+  c.setConfig(config);
+  box.appendChild(c);
+  document.getElementById("host").replaceChildren(box);
+  c.hass = hass;
+  window.__model = c;
+  return true;
+};
+window.__mountEditor = (config, tag) => {
+  const ed = document.createElement(tag || "zone-presence-room-card-editor");
   window.__edEvents = [];
   ed.addEventListener("config-changed", (e) => window.__edEvents.push(e.detail.config));
   ed.setConfig(config);

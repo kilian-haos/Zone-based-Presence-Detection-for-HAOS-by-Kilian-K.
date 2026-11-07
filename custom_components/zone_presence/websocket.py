@@ -53,7 +53,8 @@ def _rights(rt: ZonePresenceRuntime, connection: websocket_api.ActiveConnection)
 
 @callback
 def async_register(hass: HomeAssistant) -> None:
-    for cmd in (ws_config, ws_subscribe, ws_apply, ws_auto_calibrate, ws_calibration):
+    for cmd in (ws_config, ws_subscribe, ws_apply, ws_auto_calibrate, ws_calibration,
+                ws_model_view, ws_model_forget, ws_model_export, ws_model_import):
         websocket_api.async_register_command(hass, cmd)
 
 
@@ -100,6 +101,7 @@ def ws_subscribe(hass: HomeAssistant, connection: websocket_api.ActiveConnection
         vol.Optional("entry_id"): str,
         vol.Optional("rooms"): list,
         vol.Optional("zones"): list,
+        vol.Optional("exclusions"): list,
         vol.Optional("sensors"): dict,
         vol.Optional("persist", default=True): bool,
     }
@@ -109,7 +111,7 @@ def ws_apply(hass: HomeAssistant, connection: websocket_api.ActiveConnection, ms
     rt = _editable_runtime(hass, connection, msg)
     if rt is None:
         return
-    payload = {k: msg[k] for k in ("rooms", "zones", "sensors") if k in msg}
+    payload = {k: msg[k] for k in ("rooms", "zones", "exclusions", "sensors") if k in msg}
     try:
         cfg = rt.apply(payload, msg["persist"])
     except (ValueError, TypeError, KeyError) as err:
@@ -147,3 +149,79 @@ def ws_calibration(hass: HomeAssistant, connection: websocket_api.ActiveConnecti
     else:
         rt.abort_calibration()
     connection.send_result(msg["id"], rt.calibration_info())
+
+
+# ---------------------------------------------------------------- Modell-Ansicht
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/model_view",
+        vol.Optional("entry_id"): str,
+        vol.Required("room_id"): str,
+        vol.Optional("history", default=False): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_model_view(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    """Lernkarten eines Raums (nur lesend, für alle angemeldeten Benutzer)."""
+    rt = get_runtime(hass, msg.get("entry_id"))
+    if rt is None:
+        _not_found(connection, msg["id"])
+        return
+    try:
+        view = await rt.async_model_view(msg["room_id"], msg["history"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    connection.send_result(msg["id"], view)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/model_forget",
+        vol.Optional("entry_id"): str,
+        vol.Required("room_id"): str,
+        vol.Required("x"): vol.Coerce(float),
+        vol.Required("y"): vol.Coerce(float),
+        vol.Optional("radius", default=0.5): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=5)),
+    }
+)
+@callback
+def ws_model_forget(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    rt = _editable_runtime(hass, connection, msg)
+    if rt is None:
+        return
+    try:
+        n = rt.model_forget(msg["room_id"], msg["x"], msg["y"], msg["radius"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    connection.send_result(msg["id"], {"cells": n})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/model_export", vol.Optional("entry_id"): str})
+@callback
+def ws_model_export(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    rt = get_runtime(hass, msg.get("entry_id"))
+    if rt is None:
+        _not_found(connection, msg["id"])
+        return
+    connection.send_result(msg["id"], rt.model_export())
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/model_import", vol.Optional("entry_id"): str, vol.Required("data"): dict}
+)
+@callback
+def ws_model_import(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]) -> None:
+    rt = get_runtime(hass, msg.get("entry_id"))
+    if rt is None:
+        _not_found(connection, msg["id"])
+        return
+    try:
+        res = rt.model_import(msg["data"])
+    except (ValueError, TypeError, KeyError) as err:
+        connection.send_error(msg["id"], "invalid_format", str(err))
+        return
+    connection.send_result(msg["id"], res)

@@ -29,6 +29,11 @@ STRINGS: dict[str, dict[str, str]] = {
             "Only the undisturbed parts were learned ({cells} cells). Repeat it with an empty room for a "
             "better result."
         ),
+        "rate_alarm": (
+            "Sensor {sensor} reported {n} ghost detections today (usual: about {med} per day). "
+            "Has it been moved or turned, is there new furniture, a fan or a curtain in its view – "
+            "or does the sensor itself have a problem? The model view shows where the ghosts appear."
+        ),
     },
     "de": {
         "panel_title": "Präsenz-Zonen",
@@ -42,6 +47,12 @@ STRINGS: dict[str, dict[str, str]] = {
             "Die Lernkalibrierung ist abgeschlossen, war aber zu {pct} % durch bewegte Personen gestört. "
             "Gelernt wurden nur die ungestörten Anteile ({cells} Zellen). Für ein besseres Ergebnis bei "
             "leerem Raum wiederholen."
+        ),
+        "rate_alarm": (
+            "Sensor {sensor} hat heute {n} Geister-Erkennungen gemeldet (üblich: etwa {med} pro Tag). "
+            "Wurde er verschoben oder verdreht, steht ein neues Möbelstück, ein Ventilator oder ein Vorhang "
+            "in seinem Blickfeld – oder hat der Sensor selbst ein Problem? Die Modell-Ansicht zeigt, wo die "
+            "Geister auftauchen."
         ),
     },
 }

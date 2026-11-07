@@ -278,7 +278,7 @@ class TestGhostFilter(unittest.TestCase):
             ff.set("a", 1, 0, state["y"])
         f.run(61, each=pace)
         self.assertEqual(eng.cal_status, "disturbed")
-        self.assertEqual(len(eng.model.maps["s1"].cal), 0, "laufende Person wird nicht als Geist gelernt")
+        self.assertEqual(sum(1 for v in eng.model.maps["s1"].cal if v > 0), 0, "laufende Person wird nicht als Geist gelernt")
 
     def test_online_ghost_learning(self):
         eng = make_engine(zones=[])
@@ -382,6 +382,184 @@ class TestTrackingAndCalibration(unittest.TestCase):
         self.assertEqual(snap["rooms"]["r1"], 1)
 
 
+def json_roundtrip(d):
+    import json
+    return json.loads(json.dumps(d))
+
+
+class TestExclusionsAndFeatures(unittest.TestCase):
+    EXCL = [{"id": "x1", "room": "r1", "name": "Ventilator", "points": [[4, 3], [5, 3], [5, 4], [4, 4]], "depth": 0.3}]
+
+    def _eng(self, excl=None, **kw):
+        eng = make_engine(**kw)
+        eng.set_config(eng.rooms, eng.sensors, eng.zones, engine_mod.parse_exclusions(excl if excl is not None else self.EXCL))
+        return eng
+
+    def test_born_in_exclusion_ignored(self):
+        eng = self._eng(zones=[zone(pts=[[3, 2], [6, 2], [6, 5], [3, 5]])])
+        f = Feeder(eng)
+        # S1 bei (2,0) rot 0: Raum (4.5, 3.5) -> xs = 2.5, ys = 3.5
+        f.run(10, each=lambda ff: ff.set("a", 1, 2500, 3500))
+        self.assertEqual(len(eng.persons), 0, "aus dem Nichts in der Sperrzone -> ignoriert")
+        self.assertTrue(eng.tracks["s1:0"].excluded)
+        self.assertFalse(eng.zone_state["z1"].on)
+        self.assertEqual(eng.room_count["r1"], 0)
+        self.assertTrue(any(r["r"] == "excl" for r in eng.snapshot()["rejected"]))
+        self.assertGreaterEqual(eng.stats["rejected_excl"], 1)
+
+    def test_walking_in_shallow_is_clamped_deep_is_rejected(self):
+        eng = self._eng()
+        f = Feeder(eng)
+        state = {"x": 500.0}
+
+        def walk(ff):
+            state["x"] = min(state["x"] + 200, 2200.0)    # bis 0,2 m in die Sperrzone (Raum x = 4.2)
+            ff.set("a", 1, state["x"], 3500)
+        f.run(12, each=walk)
+        self.assertEqual(len(eng.persons), 1, "knapp hinein: Person bleibt, an den Rand gesetzt")
+        self.assertLess(eng.persons[0].pos[0], 4.0 + 1e-3)
+        f.run(3, each=lambda ff: ff.set("a", 1, 2600, 3500))   # 0,6 m tief -> ungültig
+        self.assertEqual(len(eng.persons), 0)
+
+    def test_released_after_leaving(self):
+        eng = self._eng()
+        f = Feeder(eng)
+        f.run(3, each=lambda ff: ff.set("a", 1, 2500, 3500))
+        self.assertTrue(eng.tracks["s1:0"].excluded)
+        state = {"x": 2500.0}
+
+        def leave(ff):
+            state["x"] = max(state["x"] - 150, 0.0)
+            ff.set("a", 1, state["x"], 3500)
+        f.run(12, each=leave)
+        self.assertFalse(eng.tracks["s1:0"].excluded, "Sperrzone verlassen -> wieder normal")
+        self.assertEqual(len(eng.persons), 1)
+
+    def test_exclusion_learning_option(self):
+        excl = [dict(self.EXCL[0], learn=True)]
+        eng = self._eng(excl=excl)
+        f = Feeder(eng)
+        for _ in range(6):
+            f.run(2, each=lambda ff: ff.set("a", 1, 2500, 3500))
+            f.set("a", 1, 0, 0)
+            f.run(1)
+        self.assertGreater(eng.model.maps["s1"].ghost_prob(2.5, 3.5), 0.4)
+        eng2 = self._eng()
+        f2 = Feeder(eng2)
+        for _ in range(6):
+            f2.run(2, each=lambda ff: ff.set("a", 1, 2500, 3500))
+            f2.set("a", 1, 0, 0)
+            f2.run(1)
+        self.assertEqual(eng2.model.maps["s1"].ghost_prob(2.5, 3.5), 0.0, "ohne Lernen: Modell bleibt unberührt")
+
+    def test_erratic_ghost_not_proven(self):
+        eng = make_engine(zones=[])
+        f = Feeder(eng)
+        state = {"k": 0}
+
+        def jumpy(ff):   # Mehrwege-Geist springt 0,8 m hin und her
+            state["k"] += 1
+            ff.set("a", 1, 0 if state["k"] % 2 else 800, 3000, jitter=False)
+        f.run(6, each=jumpy)
+        t = eng.tracks.get("s1:0")
+        self.assertTrue(t is None or not t.proven)
+        self.assertEqual(len(eng.persons), 0, "sprunghafter Geist wird nicht zur Person")
+
+    def test_walking_person_still_confirmed_fast(self):
+        eng = make_engine(zones=[])
+        f = Feeder(eng)
+        state = {"y": 1000.0}
+
+        def walk(ff):
+            state["y"] += 300
+            ff.set("a", 1, 0, state["y"])
+        f.run(3, each=walk)
+        self.assertEqual(len(eng.persons), 1)
+        self.assertTrue(eng.tracks["s1:0"].proven)
+
+    def test_cross_sensor_unseen(self):
+        """S2 schaut auf dieselbe Stelle, hat Presence 'aus' -> Geisterverdacht bei S1."""
+        sensors = [
+            (sensor_wiring("s1", "a"), {"label": "S1", "room": "r1", "pos": [2, 0], "rot": 0}),
+            (sensor_wiring("s2", "b"), {"label": "S2", "room": "r1", "pos": [2, 6], "rot": 180}),
+        ]
+        eng = make_engine(sensors=sensors, zones=[])
+        f = Feeder(eng)
+        f.presence("b", False)
+        f.run(6, each=lambda ff: ff.set("a", 1, 0, 3000))
+        self.assertGreater(eng.tracks["s1:0"].unseen_t, 4)
+        conf_unseen = eng.tracks["s1:0"].conf
+        eng2 = make_engine(sensors=sensors, zones=[])
+        f2 = Feeder(eng2)
+        f2.run(6, each=lambda ff: ff.set("a", 1, 0, 3000))
+        self.assertLess(conf_unseen, eng2.tracks["s1:0"].conf)
+
+    def test_selfcheck_false_positive_unlearns(self):
+        eng = make_engine(zones=[])
+        f = Feeder(eng)
+        m = eng.model.maps["s1"]
+        for _ in range(8):
+            eng.model.learn_ghost("s1", 0.0, 1.0, 1.0)
+        before = m.ghost_prob(0.0, 1.0)
+        state = {"y": 1000.0}
+
+        def walk(ff):
+            state["y"] = min(state["y"] + 250, 4500)
+            ff.set("a", 1, 0, state["y"])
+        f.run(5, each=walk)
+        self.assertTrue(eng.tracks["s1:0"].proven)
+        f.set("a", 1, 0, 0)
+        f.run(1)
+        self.assertGreaterEqual(eng.model.check["fp"], 1)
+        self.assertLess(m.ghost_prob(0.0, 1.0), before)
+
+    def test_heat_and_daily_stats(self):
+        eng = make_engine(zones=[])
+        eng.set_clock(14.0, "2026-11-07")
+        f = Feeder(eng)
+        f.run(10, each=lambda ff: ff.set("a", 1, 0, 2000))
+        h = eng.model.heat["r1"]
+        self.assertGreater(h.sample(2.0, 2.0), 3)
+        f.set("a", 1, 0, 0)
+        f.run(1)
+        self.assertEqual(eng.model.daily["s1"]["2026-11-07"][1], 1, "ein Track gezählt")
+
+    def test_rate_alarm(self):
+        gm = importlib.import_module("zpe.ghost_model")
+        m = gm.GhostModel(1)
+        m.daily["s1"] = {f"2026-11-0{d}": [10.0, 50.0, 0.0] for d in range(1, 7)}
+        m.set_day("2026-11-07")
+        m.count("s1", 0, 20)
+        self.assertIsNone(m.rate_alarm("s1"))
+        m.count("s1", 0, 40)
+        self.assertEqual(m.rate_alarm("s1")[0], 60)
+
+    def test_model_view_and_spots(self):
+        mv = importlib.import_module("zpe.model_view")
+        eng = make_engine(zones=[])
+        for _ in range(10):
+            eng.model.learn_ghost("s1", 1.0, 3.0, 1.0)    # Raum (3, 3)
+        view = mv.build_view(ROOM[0]["polygon"], eng.view_sensors("r1"), eng.model.heat.get("r1"), 0.2, 0, 4)
+        self.assertEqual(len(view["g"]), view["nx"] * view["ny"])
+        self.assertTrue(view["spots"])
+        sp = view["spots"][0]
+        self.assertAlmostEqual(sp["x"], 3.0, delta=0.3)
+        self.assertAlmostEqual(sp["y"], 3.0, delta=0.3)
+        self.assertEqual(sp["sensor"], "s1")
+        n = mv.forget_area(eng.model, eng.view_sensors("r1"), "r1", 3.0, 3.0, 0.6)
+        self.assertGreater(n, 0)
+        self.assertLess(eng.model.maps["s1"].ghost_prob(1.0, 3.0), 0.05)
+
+    def test_history_frames(self):
+        mv = importlib.import_module("zpe.model_view")
+        eng = make_engine(zones=[])
+        eng.model.learn_ghost("s1", 1.0, 3.0, 1.0)
+        eng.model.maybe_snapshot(1.0, force=True)
+        hist = mv.build_history(ROOM[0]["polygon"], eng.view_sensors("r1"), eng.model.snaps)
+        self.assertEqual(len(hist["frames"]), 1)
+        self.assertGreater(max(hist["frames"][0]["g"]), 20)
+
+
 class TestModelPersistence(unittest.TestCase):
     def test_roundtrip(self):
         gm = importlib.import_module("zpe.ghost_model")
@@ -395,8 +573,71 @@ class TestModelPersistence(unittest.TestCase):
         m2.load(data, {"s1": 6.0})
         self.assertAlmostEqual(m2.maps["s1"].ghost_prob(1.0, 2.0), m.maps["s1"].ghost_prob(1.0, 2.0), places=2)
         m3 = gm.GhostModel()
-        m3.load(data, {"s1": 8.0})  # Reichweite geändert -> neu lernen
-        self.assertEqual(m3.maps["s1"].ghost_prob(1.0, 2.0), 0.0)
+        m3.load(data, {"s1": 8.0})  # Reichweite geändert -> umrastern statt vergessen
+        self.assertAlmostEqual(m3.maps["s1"].ghost_prob(1.0, 2.0), m.maps["s1"].ghost_prob(1.0, 2.0), places=1)
+
+    def test_v1_migration(self):
+        """1.x-Format (dünn besetzte Dicts, 25 cm) wird verlustarm übernommen."""
+        gm = importlib.import_module("zpe.ghost_model")
+        # Zelle für (1.0, 2.0) im alten Raster: cx = (1+6)/0.25 = 28, cy = 8 -> idx = 8*48+28
+        idx = 8 * 48 + 28
+        v1 = {"maps": {"s1": {"range": 6.0, "cell": 0.25, "cal": {str(idx): 3.0}, "ghost": {str(idx): 2.0},
+                              "real": {}}}}
+        for level in (1, 2, 3):
+            m = gm.GhostModel(level)
+            m.load(v1, {"s1": 6.0})
+            p = m.maps["s1"].ghost_prob(1.12, 2.12)
+            self.assertGreater(p, 0.8, f"Stufe {level}: {p}")
+            for slot in range(m.slots):
+                self.assertGreater(m.maps["s1"].ghost_value(1.12, 2.12, slot), 1.0, "alle Tageszeit-Fenster")
+
+    def test_level_change_resamples(self):
+        gm = importlib.import_module("zpe.ghost_model")
+        m = gm.GhostModel(1)
+        m.ensure("s1", 6.0)
+        m.learn_ghost("s1", -1.0, 3.0, 1.0)
+        before = m.maps["s1"].ghost_prob(-1.0, 3.0)
+        m.set_level(3)
+        self.assertEqual(m.maps["s1"].slots, 8)
+        self.assertAlmostEqual(m.maps["s1"].cell, 0.1)
+        self.assertGreater(m.maps["s1"].ghost_prob(-1.0, 3.0), before * 0.7)
+
+    def test_time_of_day_slots(self):
+        gm = importlib.import_module("zpe.ghost_model")
+        m = gm.GhostModel(2)          # 4 Fenster à 6 h
+        m.ensure("s1", 6.0)
+        m.set_clock_slot(21.0)         # abends
+        for _ in range(6):
+            m.learn_ghost("s1", 1.0, 2.0, 1.0)
+        evening = m.maps["s1"].ghost_prob(1.0, 2.0)
+        m.set_clock_slot(9.0)          # morgens
+        morning = m.maps["s1"].ghost_prob(1.0, 2.0)
+        self.assertGreater(evening, 0.7)
+        self.assertLess(morning, evening * 0.5, "Ventilator abends -> morgens kaum Geisterverdacht")
+
+    def test_no_loss_at_cell_border(self):
+        gm = importlib.import_module("zpe.ghost_model")
+        m = gm.GhostModel(1)
+        m.ensure("s1", 6.0)
+        m.learn_ghost("s1", 0.0, 2.0, 1.0)     # genau auf einer Zellgrenze
+        a, b = m.maps["s1"].ghost_prob(-0.05, 2.0), m.maps["s1"].ghost_prob(0.05, 2.0)
+        self.assertGreater(min(a, b), 0.15)
+        self.assertLess(abs(a - b), 0.05)
+
+    def test_snapshot_and_heat_persist(self):
+        gm = importlib.import_module("zpe.ghost_model")
+        m = gm.GhostModel(2)
+        m.ensure("s1", 6.0)
+        m.learn_ghost("s1", 1.0, 2.0, 1.0)
+        h = m.heat_for("r1", (0, 0, 6, 6))
+        h.add(2.0, 2.0, 60)
+        self.assertTrue(m.maybe_snapshot(1000.0, force=True))
+        data = m.to_dict()
+        m2 = gm.GhostModel(2)
+        m2.load(json_roundtrip(data), {"s1": 6.0})
+        m2.restore_heat({"r1": (0, 0, 6, 6)})
+        self.assertEqual(len(m2.snaps), 1)
+        self.assertGreater(m2.heat["r1"].sample(2.0, 2.0), 10)
 
 
 if __name__ == "__main__":

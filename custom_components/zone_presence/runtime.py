@@ -33,6 +33,7 @@ from .const import (
     DEFAULT_CAL_DURATION,
     DEFAULT_CAL_TIME,
     DOMAIN,
+    EXCL_COLOR,
     HEARTBEAT,
     MODEL_SAVE_INTERVAL,
     MODEL_STORE_VERSION,
@@ -45,9 +46,10 @@ from .const import (
     signal_new_entities,
     signal_state,
 )
-from .engine import Engine, Settings, parse_rooms, parse_sensor, parse_zones
-from .geometry import centroid, poly_valid
+from .engine import Engine, Settings, parse_exclusions, parse_rooms, parse_sensor, parse_zones
+from .geometry import centroid, poly_bbox, poly_valid
 from .i18n import system_lang, tr
+from .model_view import build_history, build_view, forget_area
 
 _LOGGER = logging.getLogger(__name__)
 # Ab HA 2026.8 wird das übergeordnete Gerät per Geräte-ID angegeben (via_device_id)
@@ -128,6 +130,7 @@ class ZonePresenceRuntime:
         self._last_hub_push = 0.0
         self._last_cal_key: tuple = ()
         self._last_stats = -1
+        self._clock_min = -1
 
     # ================================================================ Setup
     @property
@@ -152,9 +155,13 @@ class ZonePresenceRuntime:
         self.data = self._normalize(raw)
         model_raw = await self.model_store.async_load() or {}
 
-        rooms, sensors, zones = self._parse_all()
-        self.engine.model.load(model_raw.get("maps", {}), {sid: s.range for sid, s in sensors.items()})
-        self.engine.set_config(rooms, sensors, zones)
+        rooms, sensors, zones, exclusions = self._parse_all()
+        self._set_clock()
+        self.engine.model.load(model_raw, {sid: s.range for sid, s in sensors.items()})
+        self.engine.model.restore_heat({rid: poly_bbox(r.polygon) for rid, r in rooms.items()})
+        self.engine.set_config(rooms, sensors, zones, exclusions)
+        if not self.engine.model.snaps:
+            self.engine.model.last_snap = time.time() - self.engine.model.p["snap_h"] * 3600 + 900
         self.engine.learning_enabled = bool(self.data["controls"]["learning"])
         last = self.data.get("cal_last") or {}
         if last.get("status") in ("done", "disturbed", "aborted"):
@@ -178,6 +185,7 @@ class ZonePresenceRuntime:
         self._unsubs.append(
             async_track_time_interval(self.hass, self._save_model_cb, timedelta(seconds=MODEL_SAVE_INTERVAL))
         )
+        self._unsubs.append(async_track_time_interval(self.hass, self._hourly, timedelta(hours=1)))
         self._unsubs.append(self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._on_stop))
         self._schedule_cal_listener()
         self._compute()
@@ -217,12 +225,14 @@ class ZonePresenceRuntime:
         if not _TIME_RE.match(str(controls["cal_time"])):
             controls["cal_time"] = DEFAULT_CAL_TIME
         zones = [z for z in (raw.get("zones") or []) if isinstance(z, dict)]
+        exclusions = [z for z in (raw.get("exclusions") or []) if isinstance(z, dict)]
         next_num = int(raw.get("next_zone_num") or 1)
         for z in zones:
             next_num = max(next_num, int(z.get("num") or 0) + 1)
         data = {
             "rooms": rooms,
             "zones": zones,
+            "exclusions": exclusions,
             "geometry": dict(raw.get("geometry") or {}),
             "controls": controls,
             "next_zone_num": next_num,
@@ -250,7 +260,7 @@ class ZonePresenceRuntime:
         return self.data
 
     def _model_to_save(self) -> dict:
-        return {"maps": self.engine.model.to_dict()}
+        return self.engine.model.to_dict()
 
     def _parse_all(self):
         rooms = parse_rooms(self.data["rooms"])
@@ -265,13 +275,14 @@ class ZonePresenceRuntime:
         for z in zones.values():
             if z.room and z.room not in rooms:
                 z.room = None
-        return rooms, sensors, zones
+        exclusions = {k: e for k, e in parse_exclusions(self.data.get("exclusions")).items() if e.room in rooms}
+        return rooms, sensors, zones, exclusions
 
     def _rebuild(self) -> None:
-        rooms, sensors, zones = self._parse_all()
+        rooms, sensors, zones, exclusions = self._parse_all()
         for sid, s in sensors.items():
             self.engine.model.ensure(sid, s.range)
-        self.engine.set_config(rooms, sensors, zones)
+        self.engine.set_config(rooms, sensors, zones, exclusions)
 
     # ================================================================ Rechnen
     @callback
@@ -291,7 +302,16 @@ class ZonePresenceRuntime:
         self._compute()
 
     @callback
+    def _set_clock(self) -> None:
+        local = dt_util.now()
+        minute = local.hour * 60 + local.minute
+        if minute != self._clock_min:
+            self._clock_min = minute
+            self.engine.set_clock(local.hour + local.minute / 60.0, local.date().isoformat())
+
+    @callback
     def _compute(self) -> None:
+        self._set_clock()
         now = time.monotonic()
         was_active = self.engine.cal_active
         changed = self.engine.compute(now)
@@ -385,6 +405,10 @@ class ZonePresenceRuntime:
             "allow_user_edit": self.allow_user_edit,
             "rooms": self.data["rooms"],
             "zones": self.data["zones"],
+            "exclusions": self.data.get("exclusions", []),
+            "excl_color": EXCL_COLOR,
+            "zone_colors": ZONE_COLORS,
+            "model": {"level": self.engine.model.level, "slots": self.engine.model.slots},
             "sensors": sensors,
             "settings": self.engine.settings.as_dict(),
             "controls": self.data["controls"],
@@ -439,6 +463,28 @@ class ZonePresenceRuntime:
                     self.data["next_zone_num"] = n + 1
             self.data["next_zone_num"] = max([self.data["next_zone_num"], *[n + 1 for n in used]])
             self.data["zones"] = zones
+        if "exclusions" in payload:
+            room_ids = {r["id"] for r in self.data["rooms"]}
+            excl = []
+            for z in payload["exclusions"] or []:
+                zid = str(z.get("id") or "")
+                pts = _clean_poly(z.get("points"))
+                if not _ID_RE.match(zid) or not pts or any(x["id"] == zid for x in excl):
+                    raise ValueError(f"Invalid exclusion zone: {zid or z}")
+                room = str(z.get("room") or "")
+                if room not in room_ids:
+                    continue
+                excl.append({
+                    "id": zid, "room": room, "name": _clean_str(z.get("name"), "Exclusion"), "points": pts,
+                    "depth": round(_num(z.get("depth"), 0.3, 0, 3), 2), "learn": bool(z.get("learn", False)),
+                    "enabled": bool(z.get("enabled", True)),
+                })
+            if len(excl) > 64:
+                raise ValueError("Too many exclusion zones")
+            self.data["exclusions"] = excl
+        if "rooms" in payload:
+            room_ids = {r["id"] for r in self.data["rooms"]}
+            self.data["exclusions"] = [e for e in self.data.get("exclusions", []) if e.get("room") in room_ids]
         if "sensors" in payload:
             ids = {str(w.get("id")) for w in self.wiring}
             for sid, g in (payload["sensors"] or {}).items():
@@ -699,6 +745,7 @@ class ZonePresenceRuntime:
     @callback
     def reset_model(self) -> None:
         self.engine.model.reset()
+        self._rebuild()
         self.model_store.async_delay_save(self._model_to_save, 1)
         self.data["cal_last"] = {}
         self.engine.cal_status = "idle"
@@ -707,7 +754,81 @@ class ZonePresenceRuntime:
 
     @callback
     def _save_model_cb(self, _now: datetime) -> None:
+        self.engine.model.maybe_snapshot(time.time())
         self.model_store.async_delay_save(self._model_to_save, 5)
+
+    @callback
+    def _hourly(self, _now: datetime) -> None:
+        """Warnung, wenn ein Sensor heute ungewöhnlich viele Geister liefert
+        (verdreht, verstellt, neues Möbelstück, Hardware-Problem)."""
+        model = self.engine.model
+        for sid, s in self.engine.sensors.items():
+            alarm = model.rate_alarm(sid)
+            if alarm is None or model.warned.get(sid) == model.day:
+                continue
+            model.warned[sid] = model.day
+            persistent_notification.async_create(
+                self.hass, self.t("rate_alarm", sensor=f"{s.label} · {s.name}", n=alarm[0], med=round(alarm[1])),
+                title="Zone Presence Detection", notification_id=f"{DOMAIN}_rate_{sid}",
+            )
+
+    # ================================================================ Modell-Ansicht
+    def _room_poly(self, room_id: str) -> list[list[float]] | None:
+        r = self.engine.rooms.get(room_id)
+        return r.polygon if r else None
+
+    async def async_model_view(self, room_id: str, history: bool = False) -> dict:
+        poly = self._room_poly(room_id)
+        if poly is None:
+            raise ValueError("Unknown room")
+        model = self.engine.model
+        sensors = self.engine.view_sensors(room_id)
+        heat = model.heat.get(room_id)
+        res = model.p["view"]
+        view = await self.hass.async_add_executor_job(build_view, poly, sensors, heat, res, model.slot, model.slots)
+        summary = model.summary()
+        view.update({
+            "room": room_id, "level": model.level, "slots": model.slots, "slot": model.slot,
+            "stats": {
+                "check": summary["check"], "precision": summary["precision"], "memory_kb": summary["memory_kb"],
+                "snapshots": summary["snapshots"],
+                "daily": {sid: d for sid, d in summary["daily"].items() if any(s.id == sid for s in sensors)},
+                "sensors": {sid: c for sid, c in summary["sensors"].items() if any(s.id == sid for s in sensors)},
+                "learning": self.engine.learning_enabled, "cal": self.calibration_info(),
+            },
+        })
+        if history:
+            snaps = list(model.snaps)
+            view["history"] = await self.hass.async_add_executor_job(build_history, poly, sensors, snaps)
+        return view
+
+    @callback
+    def model_forget(self, room_id: str, x: float, y: float, radius: float) -> int:
+        if self._room_poly(room_id) is None:
+            raise ValueError("Unknown room")
+        n = forget_area(self.engine.model, self.engine.view_sensors(room_id), room_id, x, y, radius)
+        self.model_store.async_delay_save(self._model_to_save, 2)
+        return n
+
+    def model_export(self) -> dict:
+        from .const import VERSION
+
+        return {"integration": DOMAIN, "version": VERSION, "exported": dt_util.utcnow().isoformat(),
+                "sensors": {sid: {"label": s.label, "name": s.name, "range": s.range} for sid, s in self.engine.sensors.items()},
+                "model": self.engine.model.to_dict()}
+
+    @callback
+    def model_import(self, data: dict) -> dict:
+        if not isinstance(data, dict) or data.get("integration") != DOMAIN or not isinstance(data.get("model"), dict):
+            raise ValueError("Not a Zone Presence Detection model export")
+        model = self.engine.model
+        ranges = {sid: s.range for sid, s in self.engine.sensors.items()}
+        model.load(data["model"], ranges)
+        model.restore_heat({rid: poly_bbox(r.polygon) for rid, r in self.engine.rooms.items()})
+        model.set_clock_slot(model.slot_hour)
+        self._rebuild()
+        self.model_store.async_delay_save(self._model_to_save, 1)
+        return {"sensors": sorted(set(ranges) & set((data["model"].get("maps") or {})))}
 
     # ================================================================ Import aus der Package-Lösung
     @callback

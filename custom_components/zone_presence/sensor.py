@@ -99,9 +99,13 @@ class GhostRejected(HubEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         st = self.runtime.engine.stats
-        return int(st["rejected_wall"] + st["rejected_filter"])
+        return int(st["rejected_wall"] + st["rejected_filter"] + st.get("rejected_excl", 0))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         st = self.runtime.engine.stats
-        return {"behind_wall": st["rejected_wall"], "filtered": st["rejected_filter"], "tracks_total": st["tracks"]}
+        model = self.runtime.engine.model
+        today = sum((days.get(model.day) or [0])[0] for days in model.daily.values())
+        return {"behind_wall": st["rejected_wall"], "filtered": st["rejected_filter"],
+                "in_exclusion_zone": st.get("rejected_excl", 0), "tracks_total": st["tracks"],
+                "ghosts_today": int(today), "model_precision": model.precision()}

@@ -6,7 +6,7 @@ from homeassistant.const import Platform
 DOMAIN = "zone_presence"
 NAME = "Zone Presence Detection by Kilian K."
 MANUFACTURER = "Kilian K."
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
@@ -48,7 +48,9 @@ DEFAULT_CAL_TIME = "03:00"
 DEFAULT_CAL_DURATION = 120  # min
 
 SENSOR_COLORS = ["#38bdf8", "#f59e0b", "#a3e635", "#f472b6", "#c084fc", "#fb7185", "#34d399", "#facc15"]
-ZONE_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#60a5fa", "#fb7185", "#4ade80", "#c084fc"]
+# Normale Zonen bekommen nie automatisch das Rot der Sperrzonen (manuell ist jede Farbe erlaubt)
+ZONE_COLORS = ["#a78bfa", "#f472b6", "#34d399", "#fbbf24", "#60a5fa", "#22d3ee", "#4ade80", "#c084fc"]
+EXCL_COLOR = "#ff3b3b"
 
 CAL_STATUSES = ["idle", "scheduled", "running", "done", "disturbed", "aborted"]
 

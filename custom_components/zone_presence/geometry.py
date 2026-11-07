@@ -82,6 +82,47 @@ def sensor_to_room(
     return (rx, ry)
 
 
+def room_to_sensor(
+    rx: float,
+    ry: float,
+    pos: Sequence[float],
+    rot_deg: float,
+    flip_x: float = 1.0,
+    flip_y: float = 1.0,
+) -> Point:
+    """Umkehrung von sensor_to_room: Raum -> Sensor-Frame (xs seitlich, ys nach vorne)."""
+    th = math.radians(rot_deg)
+    dx, dy = rx - pos[0], ry - pos[1]
+    xs = (dx * math.cos(th) + dy * math.sin(th)) * flip_x
+    ys = (-dx * math.sin(th) + dy * math.cos(th)) * flip_y
+    return (xs, ys)
+
+
+def in_fov(xs: float, ys: float, range_m: float, half_angle_deg: float, margin: float = 0.0) -> bool:
+    """Liegt ein Punkt (Sensor-Frame) im Erfassungskegel? margin verkleinert den Kegel."""
+    if ys <= 0.05:
+        return False
+    if math.hypot(xs, ys) > range_m * (1.0 - margin):
+        return False
+    return math.degrees(math.atan2(abs(xs), ys)) <= max(1.0, half_angle_deg - 60.0 * margin)
+
+
+def poly_area(poly: Sequence[Sequence[float]]) -> float:
+    a = 0.0
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        a += x1 * y2 - x2 * y1
+    return abs(a) / 2.0
+
+
+def poly_bbox(poly: Sequence[Sequence[float]]) -> tuple[float, float, float, float]:
+    xs = [p[0] for p in poly]
+    ys = [p[1] for p in poly]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def poly_valid(poly) -> bool:
     try:
         return len(poly) >= 3 and all(

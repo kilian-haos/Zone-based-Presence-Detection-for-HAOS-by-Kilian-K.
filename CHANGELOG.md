@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.0 – 2026-11-07
+
+- **AI model view**: a colourful, fluid view of what the learning ghost filter has learned (ghost spots, real activity, uncertainty, where people stay) with the live raw targets as little clouds that draw trails behind them. As a tab ("✦ AI model") and as its own card `custom:zone-presence-model-card`. Problem spots explained in one sentence (create an exclusion zone or forget with one click), click any spot for its values, time-lapse, statistics, export/import of the model.
+- **Exclusion zones**: detections appearing inside never count; a person walking in counts up to a configurable depth and is shown at the edge. Optionally learn detections there as ghosts. Always the same red; normal zones never get it automatically. Hinted at in the normal view.
+- **Dimensions**: length badges on every room edge (live while dragging); tap to type a length – the middle stays, the edge grows on both sides, optionally keeping all angles. Corner angles can be typed, Tab jumps to the next edge.
+- **Dragging an edge moves it parallel**: neighbouring edges keep their direction (a rectangle stays a rectangle), with snapping to parallel walls, other zones and alignment lines; rooms in a 5 cm grid. Shift = free as before.
+- **Visible elements**: choose every element of the view (incl. sensor overlap, dimensions, heatmap, learned ghost spots) with presets; remembered per browser, configurable for the room card.
+- **Zone templates** (sofa, beds, dining table, desk, armchair) and **duplicate** for zones and exclusion zones.
+- **Learning model 2.0**: Gaussian kernel and bilinear reading, time-of-day windows, second sensor as a witness, detection of erratic multipath ghosts, self-check with adaptive learning strength, daily statistics with a warning when a sensor suddenly reports many more ghosts, heatmap of stays, snapshots for the time-lapse. **Compute level 1–3** (Configure → Algorithms & timings). The 1.x model is migrated automatically; changing the level or the sensor range resamples instead of forgetting.
+- Marketplace (Home Assistant 2026.11) documented; HACS keeps working on older versions.
+
 ## 1.1.0 – 2026-10-30
 
 - **Edit PIN off by default.** The PIN is only active if the field contains an entry; the hint sits directly above the field.

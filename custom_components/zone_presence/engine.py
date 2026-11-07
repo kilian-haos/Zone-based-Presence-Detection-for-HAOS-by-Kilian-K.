@@ -13,6 +13,10 @@ Pipeline je Berechnung:
   7. Zonen: Zugehörigkeit mit Austritts-Hysterese (größer im Sitz-/Liege-Modus),
      Personenanzahl, Nachlaufzeit (Off-Delay).
   8. Lernen: Online (Geister/echte Aktivität) und optionale Kalibrierung.
+
+Neu in 1.2: Sperrzonen (Erkennung dort ignorieren), Abgleich über mehrere Sensoren
+("ein anderer Sensor müsste das sehen, sieht es aber nicht"), Bewegungsmerkmale
+(sprunghafte Mehrwege-Geister), Selbstprüfung des Lernmodells, Aufenthalte, Tageszeit.
 """
 from __future__ import annotations
 
@@ -25,11 +29,15 @@ from .geometry import (
     closest_on_poly,
     dist,
     dist_to_poly_edge,
+    in_fov,
     point_in_poly,
+    poly_bbox,
     poly_valid,
+    room_to_sensor,
     sensor_to_room,
 )
 from .ghost_model import GhostModel
+from .model_view import ViewSensor
 
 LEARN_FACTORS = {"slow": 0.5, "normal": 1.0, "fast": 2.0}
 CAL_REAL_DISP = 1.2      # m: Track mit mehr Weg gilt in der Kalibrierung als echte Person
@@ -38,6 +46,9 @@ PROVEN_CORR_S = 2.0      # s: Bestätigung durch zweiten Sensor, ab der "bewiese
 CONF_ON = 0.6
 CONF_OFF = 0.3
 MERGE_SPLIT_FACTOR = 1.3
+EXCL_RELEASE_S = 3.0     # s außerhalb der Sperrzone, bis ein dort entstandener Track frei wird
+EXCL_DEFAULT_DEPTH = 0.3  # m Eindringtiefe, bis zu der eine hereinkommende Person gilt
+PEN_FEEDBACK = 1.2       # Modell-Strafe (Logit), ab der die Selbstprüfung bewertet
 
 
 # ============================================================ Einstellungen
@@ -61,6 +72,7 @@ class Settings:
     learning_speed: str = "normal"   # slow | normal | fast
     memory_days: float = 14.0        # Halbwertszeit des Online-Lernens
     cal_max_spread: float = 2.0      # m Auto-Abgleich: max. Abstand der Messpunkte
+    compute_level: int = 2           # Rechenlast 1..3 (Rastergröße, Tageszeit, Zeitraffer)
 
     _LIMITS = {
         "off_delay": (0, 3600), "stuck_timeout": (0.5, 120), "still_delay": (0, 600),
@@ -68,6 +80,7 @@ class Settings:
         "merge_distance": (0, 3), "zone_exit_margin": (0, 2), "still_exit_margin": (0, 2),
         "wall_tolerance": (0, 2), "max_speed": (0.5, 15), "ghost_strength": (0, 100),
         "confirm_time": (0, 30), "memory_days": (0.5, 365), "cal_max_spread": (0.2, 10),
+        "compute_level": (1, 3),
     }
 
     @classmethod
@@ -158,6 +171,18 @@ class ZoneCfg:
         return f"{self.name} (Zone {self.num})"
 
 
+@dataclass
+class ExclusionCfg:
+    """Sperrzone: Erkennung dort zählt nicht."""
+    id: str
+    room: str | None
+    name: str
+    points: list[list[float]]
+    depth: float = EXCL_DEFAULT_DEPTH   # m Eindringtiefe einer hereinkommenden Person
+    learn: bool = False                 # dort entstandene Tracks als Geister lernen
+    enabled: bool = True
+
+
 def _f(v: Any, default: float) -> float:
     try:
         f = float(v)
@@ -231,6 +256,24 @@ def parse_zones(raw: list | None) -> dict[str, ZoneCfg]:
     return out
 
 
+def parse_exclusions(raw: list | None) -> dict[str, ExclusionCfg]:
+    out: dict[str, ExclusionCfg] = {}
+    for z in raw or []:
+        try:
+            zid = str(z["id"])
+            pts = [[float(p[0]), float(p[1])] for p in z.get("points", [])]
+        except (KeyError, TypeError, ValueError, IndexError):
+            continue
+        if not poly_valid(pts):
+            continue
+        out[zid] = ExclusionCfg(
+            id=zid, room=(str(z["room"]) if z.get("room") else None), name=str(z.get("name") or zid),
+            points=pts, depth=min(3.0, max(0.0, _f(z.get("depth"), EXCL_DEFAULT_DEPTH))),
+            learn=bool(z.get("learn", False)), enabled=bool(z.get("enabled", True)),
+        )
+    return out
+
+
 # ============================================================ Laufzeit-Objekte
 @dataclass
 class RawSlot:
@@ -273,6 +316,19 @@ class Track:
     n: int = 0
     cal_buf: dict[tuple[int, int], list[float]] = field(default_factory=dict)
     cal_dwell: float = 0.0
+    # 1.2
+    birth_r: tuple[float, float] = (0.0, 0.0)
+    max_disp_s: float = 0.0          # Weg der geglätteten Position (sprunghafte Geister bleiben klein)
+    excluded: bool = False
+    ex_zone: str | None = None
+    ex_out_t: float = 0.0
+    raw_t: float = -1.0
+    p1: tuple[float, float] | None = None
+    p2: tuple[float, float] | None = None
+    step_ema: float = 0.0
+    jerk_ema: float = 0.0
+    unseen_t: float = 0.0
+    pen_max: float = 0.0
 
 
 @dataclass
@@ -301,11 +357,13 @@ def _sig(x: float) -> float:
 class Engine:
     def __init__(self, settings: Settings | None = None, model: GhostModel | None = None) -> None:
         self.settings = settings or Settings()
-        self.model = model or GhostModel()
+        self.model = model or GhostModel(self.settings.compute_level)
         self.learning_enabled = True
         self.rooms: dict[str, RoomCfg] = {}
         self.sensors: dict[str, SensorCfg] = {}
         self.zones: dict[str, ZoneCfg] = {}
+        self.exclusions: dict[str, ExclusionCfg] = {}
+        self._heat: dict = {}
         self._entity_map: dict[str, tuple[str, int, str]] = {}
         self._presence_map: dict[str, str] = {}
         self._raw: dict[tuple[str, int], RawSlot] = {}
@@ -317,9 +375,10 @@ class Engine:
         self.rejected: list[dict] = []
         self._merged_pairs: set[tuple[str, str]] = set()
         self._wall_keys: set[str] = set()
+        self._excl_keys: set[str] = set()
         self._last_compute: float | None = None
         self._decay_acc = 0.0
-        self.stats = {"rejected_wall": 0, "rejected_filter": 0, "tracks": 0}
+        self.stats = {"rejected_wall": 0, "rejected_filter": 0, "rejected_excl": 0, "tracks": 0}
         # Kalibrierung
         self.cal_active = False
         self.cal_start = 0.0
@@ -336,11 +395,22 @@ class Engine:
 
     def set_settings(self, settings: Settings) -> None:
         self.settings = settings
+        self.model.set_level(settings.compute_level)
         self._apply_learn_rates()
+        self._heat = {rid: self.model.heat_for(rid, poly_bbox(r.polygon)) for rid, r in self.rooms.items()}
 
-    def set_config(self, rooms: dict[str, RoomCfg], sensors: dict[str, SensorCfg], zones: dict[str, ZoneCfg]) -> None:
+    def set_clock(self, hour: float, day: str) -> None:
+        """Ortszeit (Tageszeit-Fenster des Lernmodells, Tagesstatistik)."""
+        self.model.set_clock_slot(hour)
+        self.model.set_day(day)
+
+    def set_config(self, rooms: dict[str, RoomCfg], sensors: dict[str, SensorCfg], zones: dict[str, ZoneCfg],
+                   exclusions: dict[str, ExclusionCfg] | None = None) -> None:
         old_sensors = self.sensors
         self.rooms, self.sensors, self.zones = rooms, sensors, zones
+        self.exclusions = exclusions or {}
+        self._heat = {rid: self.model.heat_for(rid, poly_bbox(r.polygon)) for rid, r in rooms.items()}
+        self.model.drop_rooms(set(rooms))
         self._entity_map = {}
         self._presence_map = {}
         for s in sensors.values():
@@ -363,7 +433,7 @@ class Engine:
                                   or o.flip_x != s.flip_x or o.flip_y != s.flip_y):
                 new = s.to_room(tr.xs, tr.ys)
                 ddx, ddy = new[0] - tr.room_raw[0], new[1] - tr.room_raw[1]
-                for attr in ("room_raw", "room", "smooth", "avg", "anchor"):
+                for attr in ("room_raw", "room", "smooth", "avg", "anchor", "birth_r"):
                     p = getattr(tr, attr)
                     setattr(tr, attr, (p[0] + ddx, p[1] + ddy))
         for key in list(self._raw):
@@ -447,6 +517,7 @@ class Engine:
                         if key not in self._wall_keys:  # Ereignisse zählen, nicht Messungen
                             self._wall_keys.add(key)
                             self.stats["rejected_wall"] += 1
+                            self.model.count(s.id, 0)
                         self.rejected.append({"x": p[0], "y": p[1], "s": s.id, "r": "wall"})
                         if self.cal_active:
                             self.model.cal_add(s.id, xs, ys, dt)
@@ -466,15 +537,53 @@ class Engine:
                     if math.hypot(xs - tr.xs, ys - tr.ys) > st.max_speed * gap + 0.5:
                         self._end_track(tr, "jump", now)
                         tr = None
+                # Sperrzonen
+                ex = self._excl_hit(s.room, p) if self.exclusions and s.room else None
+                born_excluded: ExclusionCfg | None = None
+                if tr is not None and tr.excluded:
+                    if ex is None:
+                        if not tr.ex_out_t:
+                            tr.ex_out_t = now
+                        elif now - tr.ex_out_t >= EXCL_RELEASE_S:
+                            self._release_track(tr, xs, ys, p_raw, now)
+                    else:
+                        tr.ex_out_t = 0.0
+                elif ex is not None:
+                    e, depth = ex
+                    if tr is None:
+                        born_excluded = e          # aus dem Nichts in der Sperrzone aufgetaucht
+                    elif depth > e.depth:
+                        if key not in self._excl_keys:
+                            self._excl_keys.add(key)
+                            self.stats["rejected_excl"] += 1
+                            self.model.count(s.id, 0)
+                        self.rejected.append({"x": p[0], "y": p[1], "s": s.id, "r": "excl"})
+                        self._end_track(tr, "excl", now)
+                        continue
+                    else:
+                        p = self._push_out(p, e.points)
+                if ex is None:
+                    self._excl_keys.discard(key)
                 if tr is None:
                     tr = Track(
                         key=key, sensor_id=s.id, slot=i, label=f"{s.label}T{i + 1}", born=now, last=now,
                         xs=xs, ys=ys, birth_s=(xs, ys), room_raw=p_raw, room=p, smooth=p, avg=p_raw,
-                        anchor=p, anchor_t=now,
+                        anchor=p, anchor_t=now, birth_r=p_raw,
                     )
+                    if born_excluded is not None:
+                        tr.excluded, tr.ex_zone = True, born_excluded.id
+                        if key not in self._excl_keys:
+                            self._excl_keys.add(key)
+                            self.stats["rejected_excl"] += 1
+                            self.model.count(s.id, 0)
                     self.tracks[key] = tr
                     self.stats["tracks"] += 1
-                self._update_track(tr, s, xs, ys, p_raw, p, out_d, now)
+                fresh = max(raw.tx, raw.ty) > tr.raw_t
+                if fresh:
+                    tr.raw_t = max(raw.tx, raw.ty)
+                self._update_track(tr, s, xs, ys, p_raw, p, out_d, now, fresh)
+                if tr.excluded:
+                    self.rejected.append({"x": p_raw[0], "y": p_raw[1], "s": s.id, "r": "excl"})
                 seen.add(key)
 
         # Tracks ohne Update (Sensor nicht mehr vorhanden o. ä.)
@@ -483,10 +592,16 @@ class Engine:
                 self._end_track(tr, "gone", now)
 
         self._corroborate(dt)
+        self._cross_check(now, dt)
         self._confidence_and_learning(dt)
         if self.cal_active:
             self._calibration_step(now, dt)
         self._build_persons()
+        if self.learning_enabled and dt > 0:
+            for p in self.persons:
+                h = self._heat.get(p.room)
+                if h is not None:
+                    h.add(p.pos[0], p.pos[1], dt)
         changed = self._zones_and_rooms(now)
 
         self._decay_acc += dt
@@ -497,10 +612,20 @@ class Engine:
         return changed
 
     def _update_track(self, tr: Track, s: SensorCfg, xs: float, ys: float,
-                      p_raw: tuple[float, float], p: tuple[float, float], out_d: float, now: float) -> None:
+                      p_raw: tuple[float, float], p: tuple[float, float], out_d: float, now: float,
+                      fresh: bool = True) -> None:
         st = self.settings
         dtu = max(0.0, min(2.0, now - tr.last))
         tr.last = now
+        # Bewegungsmerkmale nur bei neuen Rohwerten: Schrittweite und "Ruck" (2. Differenz).
+        # Menschen bewegen sich stetig, Mehrwege-Geister springen hin und her.
+        if fresh:
+            if tr.p1 is not None:
+                tr.step_ema += 0.3 * (math.hypot(xs - tr.p1[0], ys - tr.p1[1]) - tr.step_ema)
+                if tr.p2 is not None:
+                    jerk = math.hypot(xs - 2 * tr.p1[0] + tr.p2[0], ys - 2 * tr.p1[1] + tr.p2[1])
+                    tr.jerk_ema += 0.3 * (jerk - tr.jerk_ema)
+            tr.p2, tr.p1 = tr.p1, (xs, ys)
         tr.xs, tr.ys = xs, ys
         tr.room_raw, tr.room, tr.out_d = p_raw, p, out_d
         tr.max_disp = max(tr.max_disp, math.hypot(xs - tr.birth_s[0], ys - tr.birth_s[1]))
@@ -518,10 +643,44 @@ class Engine:
         tr.smooth = (tr.smooth[0] + a * (p[0] - tr.smooth[0]), tr.smooth[1] + a * (p[1] - tr.smooth[1]))
         b = 1.0 - math.exp(-dtu / 1.0) if dtu > 0 else 0.0
         tr.avg = (tr.avg[0] + b * (p_raw[0] - tr.avg[0]), tr.avg[1] + b * (p_raw[1] - tr.avg[1]))
+        tr.max_disp_s = max(tr.max_disp_s, dist(tr.avg, tr.birth_r))
+
+    # ---------------------------------------------------------- Sperrzonen
+    def _excl_hit(self, room_id: str | None, p: tuple[float, float]) -> tuple[ExclusionCfg, float] | None:
+        best: tuple[ExclusionCfg, float] | None = None
+        for e in self.exclusions.values():
+            if not e.enabled or e.room != room_id:
+                continue
+            if point_in_poly(p[0], p[1], e.points):
+                d = dist_to_poly_edge(p, e.points)
+                if best is None or d > best[1]:
+                    best = (e, d)
+        return best
+
+    @staticmethod
+    def _push_out(p: tuple[float, float], poly: list[list[float]]) -> tuple[float, float]:
+        """Knapp hereingelaufen: an den Rand der Sperrzone setzen (wie beim Wand-Filter)."""
+        q, d = closest_on_poly(p, poly)
+        if d < 1e-9:
+            return q
+        return (q[0] + (q[0] - p[0]) / d * 0.03, q[1] + (q[1] - p[1]) / d * 0.03)
+
+    def _release_track(self, tr: Track, xs: float, ys: float, p_raw: tuple[float, float], now: float) -> None:
+        """Track hat die Sperrzone verlassen: ab jetzt normal behandeln (wie neu)."""
+        tr.excluded, tr.ex_zone, tr.ex_out_t = False, None, 0.0
+        tr.born, tr.birth_s, tr.birth_r = now, (xs, ys), p_raw
+        tr.max_disp = tr.max_disp_s = 0.0
+        tr.conf, tr.confirmed, tr.ever_confirmed, tr.proven = 0.0, False, False, False
+        tr.sum_xs = tr.sum_ys = 0.0
+        tr.n = 0
+        self._excl_keys.discard(tr.key)
 
     def _corroborate(self, dt: float) -> None:
         md = self.settings.merge_distance
-        ts = list(self.tracks.values())
+        ts = [t for t in self.tracks.values() if not t.excluded]
+        for t in self.tracks.values():
+            if t.excluded:
+                t.corr, t.corr_time = False, 0.0
         for t in ts:
             t.corr = any(o.sensor_id != t.sensor_id and dist(o.room, t.room) <= md for o in ts)
             if t.corr:
@@ -529,6 +688,46 @@ class Engine:
                 t.corr_total += dt
             else:
                 t.corr_time = 0.0
+
+    def _sensor_live(self, sid: str, now: float) -> bool:
+        return any(now - max(r.tx, r.ty) < 60.0 for (s, _i), r in self._raw.items() if s == sid)
+
+    def _cross_check(self, now: float, dt: float) -> None:
+        """Sieht ein zweiter Sensor die Stelle, meldet dort aber nichts, ist das ein starkes
+        Geister-Indiz. Nur wenn der andere Sensor einen freien Target-Platz hat (LD2450: 3)."""
+        if len(self.sensors) < 2:
+            return
+        active: dict[str, int] = {}
+        for t in self.tracks.values():
+            active[t.sensor_id] = active.get(t.sensor_id, 0) + 1
+        for t in self.tracks.values():
+            if t.excluded:
+                continue
+            s = self.sensors.get(t.sensor_id)
+            vis = strong = False
+            if s is not None and s.room and not t.corr:
+                for o in self.sensors.values():
+                    if o.id == s.id or o.room != s.room:
+                        continue
+                    xs, ys = room_to_sensor(t.room[0], t.room[1], o.eff_pos, o.eff_rot, o.flip_x, o.flip_y)
+                    if not in_fov(xs, ys, o.range, o.half_angle, margin=0.08):
+                        continue
+                    pres = self._presence.get(o.id)
+                    if o.presence:
+                        if pres is None:
+                            continue
+                        if pres is False:
+                            vis = strong = True
+                            continue
+                    elif not self._sensor_live(o.id, now):
+                        continue
+                    if active.get(o.id, 0) >= len(o.targets):
+                        continue
+                    vis = True
+            if vis:
+                t.unseen_t += dt * (2.0 if strong else 1.0)
+            else:
+                t.unseen_t = max(0.0, t.unseen_t - 2.0 * dt)
 
     def _confidence_and_learning(self, dt: float) -> None:
         st = self.settings
@@ -538,6 +737,10 @@ class Engine:
         for t in self.tracks.values():
             m = self.model.maps.get(t.sensor_id)
             age = t.last - t.born
+            if t.excluded:
+                t.conf, t.confirmed = 0.0, False
+                t.zones.clear()
+                continue
             if not st.ghost_filter:
                 t.conf = 1.0
                 t.confirmed = True
@@ -545,10 +748,16 @@ class Engine:
                 g = m.ghost_prob(t.xs, t.ys) if m else 0.0
                 r = m.real_prob(t.xs, t.ys) if m else 0.0
                 f_age = min(age / st.confirm_time, 1.0) if st.confirm_time > 0 else 1.0
-                f_travel = min(t.max_disp / PROVEN_DISP, 1.0)
+                f_travel = min(t.max_disp_s / PROVEN_DISP, 1.0)
                 f_out = min(t.out_d / st.wall_tolerance, 1.0) if st.wall_tolerance > 0 else 0.0
+                f_unseen = min(t.unseen_t / 4.0, 1.0)
+                f_err = min(max((t.jerk_ema - 0.12) / 0.3, 0.0), 1.0)
+                f_travel *= 1.0 - f_err          # Springen ist kein Weg
+                pen = w_ghost * g
+                if not t.proven:
+                    t.pen_max = max(t.pen_max, pen)
                 logit = bias + 2.6 * f_age + 3.0 * f_travel + 4.0 * (1.0 if t.corr else 0.0) \
-                    - w_ghost * g + 0.8 * r - 1.0 * f_out
+                    - pen + 0.8 * r - 1.0 * f_out - 0.9 * f_unseen - 2.0 * f_err
                 t.conf = _sig(logit)
                 if not t.confirmed and t.conf >= CONF_ON:
                     t.confirmed = True
@@ -557,22 +766,44 @@ class Engine:
                     t.zones.clear()
             if t.confirmed:
                 t.ever_confirmed = True
-                if t.max_disp >= PROVEN_DISP or t.corr_time >= PROVEN_CORR_S:
+                if (t.max_disp_s >= PROVEN_DISP and t.jerk_ema < 0.3) or t.corr_time >= PROVEN_CORR_S:
                     t.proven = True
             # Online-Lernen echter Aktivität
-            if self.learning_enabled and t.proven and dt > 0:
-                self.model.learn_real(t.sensor_id, t.xs, t.ys, dt)
+            if t.proven and dt > 0:
+                self.model.count(t.sensor_id, 2, dt)
+                if self.learning_enabled:
+                    self.model.learn_real(t.sensor_id, t.xs, t.ys, dt)
 
     def _end_track(self, t: Track, reason: str, now: float) -> None:
         self.tracks.pop(t.key, None)
         age = now - t.born
-        if not t.ever_confirmed:
+        self.model.count(t.sensor_id, 1)
+        if t.excluded:
+            ex = self.exclusions.get(t.ex_zone or "")
+            if self.learning_enabled and ex is not None and ex.learn and t.n > 0 and reason != "jump":
+                self.model.learn_ghost(t.sensor_id, t.sum_xs / t.n, t.sum_ys / t.n, min(age, 10.0) / 10.0)
+            if self.cal_active:
+                self._cal_flush(t)
+            self._merged_pairs = {p for p in self._merged_pairs if t.key not in p}
+            return
+        if not t.ever_confirmed and reason != "excl":
             self.stats["rejected_filter"] += 1
+            self.model.count(t.sensor_id, 0)
+        # Selbstprüfung des Lernmodells
+        if self.learning_enabled and self.settings.ghost_filter:
+            if t.proven and t.pen_max >= PEN_FEEDBACK:
+                self.model.feedback_fp(t.sensor_id, *t.birth_s)
+            elif not t.ever_confirmed and t.pen_max >= PEN_FEEDBACK:
+                self.model.feedback_tp()
+            elif (reason == "gone" and t.ever_confirmed and not t.proven and age < 30.0 and t.max_disp < 0.5
+                  and t.corr_total < 0.5 and t.n > 0):
+                self.model.feedback_fn(t.sensor_id, t.sum_xs / t.n, t.sum_ys / t.n)
         # Online-Lernen von Geistern: nur natürliches Verschwinden, nie bestätigt,
         # ortsfest, nicht von anderem Sensor gesehen
         if (self.learning_enabled and reason == "gone" and not t.ever_confirmed and age >= 0.5
                 and t.max_disp < 0.5 and t.corr_total < 0.5 and t.n > 0):
-            self.model.learn_ghost(t.sensor_id, t.sum_xs / t.n, t.sum_ys / t.n, min(age, 10.0) / 10.0)
+            boost = 1.5 if t.unseen_t >= 2.0 else 1.0
+            self.model.learn_ghost(t.sensor_id, t.sum_xs / t.n, t.sum_ys / t.n, boost * min(age, 10.0) / 10.0)
         if self.cal_active:
             self._cal_flush(t)
         self._merged_pairs = {p for p in self._merged_pairs if t.key not in p}
@@ -709,7 +940,7 @@ class Engine:
     def _calibration_step(self, now: float, dt: float) -> None:
         real_present = False
         for t in self.tracks.values():
-            if t.max_disp > CAL_REAL_DISP or t.corr_total >= PROVEN_CORR_S:
+            if not t.excluded and (t.max_disp > CAL_REAL_DISP or t.corr_total >= PROVEN_CORR_S):
                 real_present = True
                 t.cal_buf.clear()
                 continue
@@ -801,4 +1032,17 @@ class Engine:
                 for t in self.tracks.values() if not t.confirmed
             ]
             out["rejected"] = [{"x": r3(r["x"]), "y": r3(r["y"]), "s": r["s"], "r": r["r"]} for r in self.rejected]
+            # Rohdaten aller Tracks (Modell-Ansicht: Wölkchen mit Schwaden)
+            out["targets"] = [
+                {"k": t.key, "x": r3(t.room_raw[0]), "y": r3(t.room_raw[1]), "s": t.sensor_id,
+                 "c": round(t.conf, 2), "ok": t.confirmed, "ex": t.excluded, "pr": t.proven}
+                for t in self.tracks.values()
+            ]
         return out
+
+    # ---------------------------------------------------------- Modell-Ansicht
+    def view_sensors(self, room_id: str) -> list[ViewSensor]:
+        return [
+            ViewSensor(s.id, s.eff_pos, s.eff_rot, s.flip_x, s.flip_y, s.range, s.half_angle, self.model.maps.get(s.id))
+            for s in self.sensors.values() if s.room == room_id
+        ]

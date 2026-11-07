@@ -81,6 +81,18 @@ class TranslationTest(unittest.TestCase):
         self.assertGreater(len(keys(en_part)), 60)
         self.assertEqual(keys(en_part), keys(de_part))
         used = set(re.findall(r'_t\("(\w+)"', card)) | set(re.findall(r'\bt\("(\w+)"\)', card))
+        # Dynamische Schlüssel: Präfix + Liste (Ebenen, Vorlagen, Legende, Voreinstellungen)
+        lists = {
+            "lay_": re.search(r"const LAYERS = \[([^\]]+)\]", card).group(1),
+            "tpl_": " ".join(re.findall(r'\{ k: "(\w+)"', card)),
+            "leg_": re.search(r"const MODEL_LAYERS = \[([^\]]+)\]", card).group(1),
+            "preset_": "minimal standard diag all",
+        }
+        for prefix, items in lists.items():
+            self.assertIn(prefix, used)
+            used.discard(prefix)
+            for item in re.findall(r"\w+", items):
+                used.add(prefix + item)
         self.assertEqual(used - keys(en_part), set())
 
     def test_backend_i18n_same_keys(self):

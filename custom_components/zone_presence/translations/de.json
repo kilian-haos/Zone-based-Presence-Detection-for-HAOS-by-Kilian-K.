@@ -127,6 +127,7 @@
           "ghost_strength": "Stärke des Geisterfilters",
           "learning_speed": "Lerngeschwindigkeit",
           "memory_days": "Gedächtnis (Halbwertszeit)",
+          "compute_level": "Rechenlast des Lernmodells",
           "cal_max_spread": "Auto-Abgleich: max. Abstand der Messpunkte"
         },
         "data_description": {
@@ -146,6 +147,7 @@
           "ghost_strength": "Höher = Geisterbereiche werden strenger behandelt.",
           "learning_speed": "Wie schnell das Modell im laufenden Betrieb dazulernt.",
           "memory_days": "Nach dieser Zeit ist im Betrieb Gelerntes nur noch halb so stark. Die Lernkalibrierung verfällt nicht.",
+          "compute_level": "Stufe 1 = sparsam (25-cm-Raster, ein Tagesmodell). Stufe 2 = ausgewogen (15-cm-Raster, 4 Tageszeit-Fenster). Stufe 3 = maximal (10-cm-Raster, 8 Tageszeit-Fenster, dichterer Zeitraffer). Beim Wechsel wird das Gelernte umgerastert, nicht gelöscht.",
           "cal_max_spread": "Beim Abgleich werden Sensoren ignoriert, deren Messpunkt weiter vom Mittel entfernt ist (anderes Ziel)."
         }
       },
@@ -188,6 +190,13 @@
         "slow": "Langsam",
         "normal": "Normal",
         "fast": "Schnell"
+      }
+    },
+    "compute_level": {
+      "options": {
+        "1": "1 – Sparsam",
+        "2": "2 – Ausgewogen (empfohlen)",
+        "3": "3 – Maximal"
       }
     }
   },

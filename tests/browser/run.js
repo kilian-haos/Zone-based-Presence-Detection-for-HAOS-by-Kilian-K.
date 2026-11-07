@@ -146,7 +146,7 @@ const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log("  ok  
 
   console.log("Rohdaten");
   await page.locator(".raw-btn").click(); await page.waitForTimeout(250);
-  ok("Kandidaten + verworfene Geister", (await page.locator(".cand").count()) === 1 && (await page.locator(".rej").count()) === 1);
+  ok("Kandidaten + verworfene Geister", (await page.locator(".cand").count()) === 1 && (await page.locator(".rej").count()) === 2);
   await page.locator('.seg[data-mode="view"]').click(); await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(OUT, "08_rohdaten.png") });
 
@@ -303,6 +303,235 @@ const ok = (name, cond, extra = "") => { if (cond) { pass++; console.log("  ok  
   const evs = await rc.evaluate(() => window.__edEvents);
   ok("Editor: config-changed (Raum, Kegel)", evs.length >= 2 && evs[evs.length - 1].room === "r2" && evs[evs.length - 1].show_cones === false, JSON.stringify(evs));
   await rc.close();
+
+  // ------------------------------------------------------------------ 1.2: Sichtbarkeit
+  console.log("Sichtbare Elemente");
+  const lp = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  lp.on("pageerror", (e) => errors.push(String(e)));
+  lp.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await lp.goto(BASE + "?lang=de"); await lp.waitForTimeout(600);
+  const inCard = (pg, sel) => pg.evaluate((s) => { const r = window.__card.shadowRoot.querySelector(s); return r ? getComputedStyle(r).display !== "none" : false; }, sel);
+  ok("Sperrzone in der Ansicht angedeutet", await inCard(lp, '#excl .excl[data-zone="x1"]'));
+  await lp.locator(".lay-btn").click(); await lp.waitForTimeout(200);
+  ok("Menü sichtbare Elemente offen", await lp.locator(".laypop").isVisible());
+  ok("Alle Elemente wählbar (13)", (await lp.locator(".laypop [data-layer]").count()) === 13);
+  await lp.screenshot({ path: path.join(OUT, "15_sichtbar.png") });
+  await lp.locator('.laypop [data-layer="cones"]').uncheck(); await lp.waitForTimeout(150);
+  ok("Kegel ausgeblendet", !(await inCard(lp, "#coverage")));
+  await lp.locator('.laypop [data-preset="minimal"]').click(); await lp.waitForTimeout(150);
+  ok("Voreinstellung „Nur Personen“", !(await inCard(lp, "#sensors")) && (await inCard(lp, "#persons")) && !(await inCard(lp, "#zones .zone .zone-tag")));
+  await lp.locator('.laypop [data-layer="dims"]').check(); await lp.waitForTimeout(150);
+  ok("Bemaßung in der Ansicht", (await lp.evaluate(() => window.__card.shadowRoot.querySelectorAll("#dims .dim").length)) === 6);
+  await lp.locator('.laypop [data-layer="overlap"]').check(); await lp.waitForTimeout(150);
+  ok("Überlappung gezeichnet", (await lp.evaluate(() => window.__card.shadowRoot.querySelectorAll("#overlap .ovl").length)) === 1);
+  await lp.locator('.laypop [data-layer="heat"]').check(); await lp.waitForTimeout(500);
+  ok("Heatmap im Grundriss (Modelldaten geladen)", (await lp.evaluate(() => window.__card.shadowRoot.querySelectorAll("#mbg image").length)) === 1);
+  const saved = await lp.evaluate(() => JSON.parse(localStorage.getItem("zp_layers_v1")));
+  ok("Auswahl gemerkt (localStorage)", saved.includes("dims") && !saved.includes("sensors"), JSON.stringify(saved));
+  await lp.reload(); await lp.waitForTimeout(600);
+  ok("Auswahl nach Neuladen erhalten", !(await inCard(lp, "#sensors")) && (await lp.evaluate(() => window.__card.shadowRoot.querySelectorAll("#dims .dim").length)) === 6);
+  await lp.screenshot({ path: path.join(OUT, "16_ebenen.png") });
+  await lp.evaluate(() => localStorage.removeItem("zp_layers_v1"));
+  await lp.close();
+
+  // ------------------------------------------------------------------ Sperrzonen, Vorlagen, Kanten
+  console.log("Sperrzonen + Vorlagen + Kanten");
+  const zp = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  zp.on("pageerror", (e) => errors.push(String(e)));
+  zp.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  const unlock = async (pg, q = "?lang=de") => {
+    await pg.goto(BASE + q); await pg.waitForTimeout(600);
+    await pg.locator(".mode-btn").click();
+    for (const k of ["1", "2", "3", "4"]) await pg.locator(`.pin-pad button[data-k="${k}"]`).click();
+    await pg.waitForTimeout(300);
+  };
+  const lastA = async (pg, f = () => true) => (await pg.evaluate(() => window.__ws)).filter((m) => m.type === "zone_presence/apply").filter(f).pop();
+  await unlock(zp);
+  // Kante parallel ziehen: Rechteck bleibt Rechteck, auch bei schrägem Ziehen
+  const scr2 = (x, y) => zp.evaluate(([a, b]) => window.__scr(a, b), [x, y]);
+  const dragBy = async (sel, fromPt, toPt, shift) => {
+    const bx = await zp.locator(sel).first().boundingBox(), hx = bx.x + bx.width / 2, hy = bx.y + bx.height / 2;
+    const A1 = await scr2(...fromPt), B1 = await scr2(...toPt);
+    await zp.mouse.move(hx, hy); await zp.mouse.down();
+    if (shift) await zp.keyboard.down("Shift");
+    for (let i = 1; i <= 10; i++) { await zp.mouse.move(hx + ((B1[0] - A1[0]) * i) / 10, hy + ((B1[1] - A1[1]) * i) / 10); await zp.waitForTimeout(15); }
+    await zp.mouse.up(); if (shift) await zp.keyboard.up("Shift"); await zp.waitForTimeout(150);
+  };
+  const zpts = (id) => zp.evaluate((z) => window.__card._zoneObj(z).points.map((p) => p.slice()), id);
+  // z3 = [[0.6,1.2],[2.8,1.2],[2.8,3.4],[0.6,3.4]] – rechte Kante (Index 1) schräg nach rechts oben ziehen
+  await dragBy('.zone[data-zone="z3"] [data-edge="1"]', [2.8, 2.3], [3.37, 1.93]);
+  let zz = await zpts("z3");
+  ok("Kante wandert parallel (rechte Winkel bleiben)", zz[1][1] === 1.2 && zz[2][1] === 3.4 && zz[1][0] === zz[2][0] && zz[1][0] > 3.2, JSON.stringify(zz));
+  await dragBy('.zone[data-zone="z3"] [data-edge="1"]', [zz[1][0], 2.3], [3.41, 2.4]);
+  zz = await zpts("z3");
+  ok("Kante rastet an paralleler Wand/Flucht ein (x = 3,45)", Math.abs(zz[1][0] - 3.45) < 1e-6 && Math.abs(zz[2][0] - 3.45) < 1e-6, JSON.stringify(zz));
+  const before3 = await zpts("z3");
+  await dragBy('.zone[data-zone="z3"] [data-edge="2"]', [1.7, 3.4], [2.2, 3.62], true);
+  zz = await zpts("z3");
+  ok("Shift: frei verschieben (auch seitlich)", Math.abs(zz[2][0] - before3[2][0] - 0.5) < 0.05 && Math.abs(zz[3][0] - before3[3][0] - 0.5) < 0.05, JSON.stringify(zz));
+
+  await zp.locator('[data-act="addexcl"]').click(); await zp.waitForTimeout(200);
+  let A = await lastA(zp, (m) => m.exclusions);
+  ok("＋ Sperrzone gesendet", A.exclusions.length === 2 && A.exclusions[1].name === "Sperrzone" && A.zones.length === 2);
+  const exColor = await zp.evaluate(() => getComputedStyle(window.__card.shadowRoot.querySelectorAll("#excl .excl")[1].querySelector(".ex-fill")).stroke);
+  ok("Sperrzone rot", /255, 59, 59/.test(exColor), exColor);
+  const newId = A.exclusions[1].id;
+  await zp.locator(`#excl .excl[data-zone="${newId}"] .tag-text`).click(); await zp.waitForTimeout(200);
+  ok("Sperrzonen-Panel offen", await zp.locator(".panel .p-box").isVisible());
+  await zp.locator('.panel [data-p="depth"]').fill("0.5");
+  await zp.locator('.panel [data-p="learn"]').check();
+  await zp.locator(".panel .p-save").click(); await zp.waitForTimeout(200);
+  A = await lastA(zp, (m) => m.exclusions);
+  const ne = A.exclusions.find((x) => x.id === newId);
+  ok("Eindringtiefe + Lernen gespeichert", ne.depth === 0.5 && ne.learn === true, JSON.stringify(ne));
+  await zp.screenshot({ path: path.join(OUT, "17_sperrzone.png") });
+  await zp.locator('[data-act="tplmenu"]').click(); await zp.waitForTimeout(150);
+  ok("Vorlagen-Menü", (await zp.locator(".dd-menu [data-tpl]").count()) === 7);
+  await zp.locator('.dd-menu [data-tpl="sofa"]').click(); await zp.waitForTimeout(200);
+  A = await lastA(zp, (m) => m.zones);
+  const sofa = A.zones[A.zones.length - 1], sw = Math.max(...sofa.points.map((p) => p[0])) - Math.min(...sofa.points.map((p) => p[0])), sh = Math.max(...sofa.points.map((p) => p[1])) - Math.min(...sofa.points.map((p) => p[1]));
+  ok("Vorlage Sofa 2,2 × 0,95 m", Math.abs(sw - 2.2) < 1e-6 && Math.abs(sh - 0.95) < 1e-6 && sofa.name === "Sofa", JSON.stringify(sofa));
+  ok("Zonenfarbe nie Sperrzonen-Rot", A.zones.every((z) => z.color.toLowerCase() !== "#ff3b3b"));
+  await zp.locator('.zone[data-zone="z3"] .tag-text').click(); await zp.waitForTimeout(200);
+  await zp.locator(".panel .p-extra").click(); await zp.waitForTimeout(200);
+  A = await lastA(zp, (m) => m.zones);
+  ok("Zone duplizieren", A.zones.some((z) => z.name === "Esstisch (Kopie)") && A.zones.length === 4);
+
+  // Raum-Bemaßung
+  await zp.locator('.seg[data-mode="rooms"]').click(); await zp.waitForTimeout(200);
+  const badges = await zp.evaluate(() => [...window.__card.shadowRoot.querySelectorAll("#room .dim text")].map((t) => t.textContent));
+  ok("Längen-Badges an allen Kanten", badges.length === 6 && badges[0] === "7,00 m", JSON.stringify(badges));
+  ok("Winkel an allen Ecken", (await zp.evaluate(() => [...window.__card.shadowRoot.querySelectorAll("#room .ang text")].map((t) => t.textContent))).join(" ") === "90° 90° 90° 270° 90° 90°");
+  // Kante 0 (oben, 0,0 -> 7,0) per Ziehen nach oben: Badge der Nachbarkante aktualisiert sich live
+  const bb0 = await zp.locator('#room [data-redge="0"]').boundingBox();
+  await zp.mouse.move(bb0.x + bb0.width / 2, bb0.y + bb0.height / 2); await zp.mouse.down();
+  for (let i = 1; i <= 6; i++) { await zp.mouse.move(bb0.x + bb0.width / 2, bb0.y + bb0.height / 2 - i * 6); await zp.waitForTimeout(15); }
+  const liveTxt = await zp.evaluate(() => window.__card.shadowRoot.querySelector('#room [data-redge="5"] text').textContent);
+  await zp.mouse.up(); await zp.waitForTimeout(150);
+  ok("Badge aktualisiert sich live beim Ziehen", liveTxt !== "5,50 m", liveTxt);
+  await zp.locator(".undo-btn").click(); await zp.waitForTimeout(250);
+  // Länge eintippen
+  await zp.locator('#room [data-redge="0"]').click(); await zp.waitForTimeout(200);
+  ok("Eingabefeld öffnet sich am Badge", await zp.locator(".dimedit").isVisible());
+  await zp.screenshot({ path: path.join(OUT, "18_bemassung.png") });
+  await zp.locator(".dimedit .de-in").fill("8");
+  await zp.locator(".dimedit .de-in").press("Enter"); await zp.waitForTimeout(200);
+  A = await lastA(zp, (m) => m.rooms);
+  let rpoly = A.rooms.find((r) => r.id === "r1").polygon;
+  ok("Länge 8 m, Mitte bleibt (3,5 | 0)", Math.abs(rpoly[0][0] + 0.5) < 1e-6 && Math.abs(rpoly[1][0] - 7.5) < 1e-6 && rpoly[0][1] === 0 && rpoly[1][1] === 0, JSON.stringify(rpoly));
+  ok("Winkel bleiben: Nachbarwände wandern mit", Math.abs(rpoly[5][0] + 0.5) < 1e-6 && Math.abs(rpoly[2][0] - 7.5) < 1e-6 && rpoly[5][1] === 5.5 && rpoly[2][1] === 4, JSON.stringify(rpoly));
+  await zp.locator('#room [data-redge="1"]').click(); await zp.waitForTimeout(200);
+  await zp.locator(".dimedit .de-in").fill("3,5");
+  await zp.locator(".dimedit .de-in").press("Tab"); await zp.waitForTimeout(250);
+  A = await lastA(zp, (m) => m.rooms);
+  rpoly = A.rooms.find((r) => r.id === "r1").polygon;
+  ok("Tab übernimmt (3,5 m) und springt zur nächsten Kante", Math.abs(rpoly[2][1] - rpoly[1][1] - 3.5) < 1e-6 && (await zp.locator(".dimedit").isVisible()) && (await zp.locator(".dimedit .de-in").inputValue()) !== "3,50", JSON.stringify(rpoly));
+  await zp.locator(".dimedit .de-in").press("Escape"); await zp.waitForTimeout(100);
+  ok("Esc schließt das Eingabefeld", !(await zp.locator(".dimedit").isVisible()));
+  await zp.locator('#room [data-redge="2"]').click(); await zp.waitForTimeout(150);
+  await zp.locator(".dimedit .de-k").uncheck();
+  await zp.locator(".dimedit .de-in").fill("4");
+  await zp.locator(".dimedit .de-ok").click(); await zp.waitForTimeout(200);
+  const lit = await zp.evaluate(() => { const poly = [[0, 0], [4, 0], [4, 3], [0, 3]]; window.__card._setEdgeLength(poly, 0, 5, false); return poly; });
+  ok("Ohne „Winkel beibehalten“ nur die Kante selbst", JSON.stringify(lit) === JSON.stringify([[-0.5, 0], [4.5, 0], [4, 3], [0, 3]]), JSON.stringify(lit));
+  const keep = await zp.evaluate(() => { const poly = [[0, 0], [4, 0], [5, 3], [-1, 3]]; window.__card._setEdgeLength(poly, 0, 6, true); return poly; });
+  ok("Winkel beibehalten auch bei schrägen Wänden (Trapez)", JSON.stringify(keep) === JSON.stringify([[-1, 0], [5, 0], [6, 3], [-2, 3]]), JSON.stringify(keep));
+  // Winkel eintippen
+  await zp.locator(".undo-btn").click(); await zp.waitForTimeout(250);
+  await zp.locator('#room [data-rang="1"]').click(); await zp.waitForTimeout(200);
+  await zp.locator(".dimedit .de-in").fill("80");
+  await zp.locator(".dimedit .de-in").press("Enter"); await zp.waitForTimeout(200);
+  const ang = await zp.evaluate(() => window.__card.shadowRoot.querySelector('#room [data-rang="1"] text').textContent);
+  ok("Eckwinkel eintippen", ang === "80°", ang);
+  // Raumkante ziehen: parallel + 5-cm-Raster
+  await zp.locator(".undo-btn").click(); await zp.waitForTimeout(250);
+  const rbefore = await zp.evaluate(() => window.__card._room().polygon.map((p) => p.slice()));
+  await dragBy('#room [data-redge="1"]', [rbefore[1][0], 2], [rbefore[1][0] + 0.33, 1.6]);
+  const rafter = await zp.evaluate(() => window.__card._room().polygon.map((p) => p.slice()));
+  ok("Raumkante parallel, im Raster", rafter[1][1] === rbefore[1][1] && rafter[2][1] === rbefore[2][1] && rafter[1][0] === rafter[2][0] && Math.abs(rafter[1][0] * 20 - Math.round(rafter[1][0] * 20)) < 1e-6, JSON.stringify([rbefore[1], rafter[1], rafter[2]]));
+  await zp.close();
+
+  // ------------------------------------------------------------------ KI-Modell-Ansicht
+  console.log("KI-Modell");
+  const mp = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
+  mp.on("pageerror", (e) => errors.push(String(e)));
+  mp.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await mp.goto(BASE + "?lang=de"); await mp.waitForTimeout(600);
+  await mp.locator('.vseg [data-view="model"]').click(); await mp.waitForTimeout(1500);
+  ok("Modell-Ansicht: Daten angefordert", (await mp.evaluate(() => window.__ws)).some((m) => m.type === "zone_presence/model_view" && m.room_id === "r1"));
+  const pix = async () => mp.evaluate(() => {
+    const c = window.__card.shadowRoot.querySelector("canvas.fx"), x = c.getContext("2d"), d = x.getImageData(0, 0, c.width, c.height).data;
+    let n = 0, sum = 0; for (let i = 3; i < d.length; i += 16) { if (d[i] > 8) n++; sum += d[i - 3] + d[i - 2] + d[i - 1]; } return { n, sum, w: c.width, h: c.height };
+  });
+  const p1 = await pix(); await mp.waitForTimeout(700); const p2 = await pix();
+  ok("Canvas zeichnet Wolken", p1.n > 1000 && p1.w > 300, JSON.stringify(p1));
+  ok("Es bewegt sich (nie tot)", p1.sum !== p2.sum, JSON.stringify([p1.sum, p2.sum]));
+  ok("Problemstellen markiert", (await mp.evaluate(() => window.__card.shadowRoot.querySelectorAll("#ospots .ospot").length)) === 2);
+  ok("Panel: Problemstellen erklärt", /Wand/.test(await mp.locator(".mpanel .mp-spot").first().textContent()) && /18 und 24 Uhr/.test(await mp.locator(".mpanel .mp-spot").first().textContent()));
+  ok("Panel: Statistik", /93 % richtig/.test(await mp.locator(".mpanel").textContent()) && /Heute abgefangene Geister: 14/.test(await mp.locator(".mpanel").textContent()));
+  ok("Live-Rohtargets in der Animation", (await mp.evaluate(() => window.__card._fx.tg.size)) === 5);
+  await mp.waitForTimeout(800);
+  ok("Bewegte Targets ziehen Schwaden", (await mp.evaluate(() => window.__card._fx.trails.length)) > 5);
+  await mp.screenshot({ path: path.join(OUT, "19_modell.png") });
+  await mp.locator(".mpanel [data-ml='g']").click(); await mp.waitForTimeout(200);
+  ok("Legende schaltet Ebene ab", !(await mp.evaluate(() => window.__card._mlayers.has("g"))) && (await mp.evaluate(() => window.__card._fx.want.g)) === 0);
+  await mp.locator(".mpanel [data-ml='g']").click(); await mp.waitForTimeout(200);
+  const so = await mp.locator('#ospots [data-spot="1"]').boundingBox();
+  await mp.mouse.click(so.x + so.width / 2, so.y + so.height / 2); await mp.waitForTimeout(250);
+  ok("Klick auf Markierung hebt Problemstelle hervor", (await mp.locator(".mp-spot.hl").count()) === 1 && (await mp.locator('.mp-spot.hl[data-spotrow="1"]').count()) === 1);
+  const pt = await mp.evaluate(() => window.__scr(3.0, 2.5));
+  await mp.mouse.click(pt[0], pt[1]); await mp.waitForTimeout(200);
+  ok("Klick zeigt Werte der Stelle", await mp.locator(".minfo").isVisible() && /Echte Aktivität/.test(await mp.locator(".minfo").textContent()));
+  await mp.screenshot({ path: path.join(OUT, "20_modell_info.png") });
+  await mp.locator(".minfo [data-forget]").click(); await mp.waitForTimeout(150);
+  ok("Vergessen fragt nach PIN", await mp.locator(".pin-overlay").isVisible());
+  for (const k of ["1", "2", "3", "4"]) await mp.locator(`.pin-pad button[data-k="${k}"]`).click();
+  await mp.waitForTimeout(400);
+  ok("Bereich vergessen gesendet", (await mp.evaluate(() => window.__ws)).some((m) => m.type === "zone_presence/model_forget" && Math.abs(m.x - 3) < 0.05 && m.radius === 0.5));
+  ok("Bleibt in der Modell-Ansicht", (await mp.locator(".zp.view-model").count()) === 1);
+  await mp.locator('.mpanel [data-mact="spotexcl"][data-i="0"]').click(); await mp.waitForTimeout(250);
+  const ea = (await mp.evaluate(() => window.__ws)).filter((m) => m.type === "zone_presence/apply" && m.exclusions).pop();
+  ok("Problemstelle -> Sperrzone", ea && ea.exclusions.length === 2 && ea.exclusions[1].points[0][0] === 0.6 && ea.exclusions[1].points[2][1] === 5.0, JSON.stringify(ea && ea.exclusions[1]));
+  await mp.locator('.mpanel [data-mact="tlload"]').click(); await mp.waitForTimeout(400);
+  ok("Zeitraffer lädt Verlauf", (await mp.evaluate(() => window.__ws)).some((m) => m.type === "zone_presence/model_view" && m.history === true));
+  ok("Zeitraffer spielt", (await mp.locator(".mpanel .mp-tl input[type=range]").count()) === 1);
+  await mp.waitForTimeout(1600);
+  ok("Zeitraffer schreitet fort", +(await mp.locator(".mpanel .mp-tl input[type=range]").inputValue()) >= 1);
+  await mp.screenshot({ path: path.join(OUT, "21_zeitraffer.png") });
+  ok("Export/Import nur für Admins sichtbar", (await mp.locator('.mpanel [data-mact="export"]').count()) === 1);
+  const [dl] = await Promise.all([mp.waitForEvent("download", { timeout: 3000 }).catch(() => null), mp.locator('.mpanel [data-mact="export"]').click()]);
+  ok("Export lädt eine Datei", dl && /zone-presence-model-.*\.json/.test(dl.suggestedFilename()));
+  await mp.locator('.vseg [data-view="plan"]').click(); await mp.waitForTimeout(300);
+  ok("Zurück zum Grundriss stoppt die Animation", (await mp.evaluate(() => window.__card._fx.running)) === false);
+  await mp.setViewportSize({ width: 390, height: 844 }); await mp.locator('.vseg [data-view="model"]').click(); await mp.waitForTimeout(800);
+  ok("Modell mobil: kein horizontales Scrollen", !(await mp.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1)));
+  await mp.screenshot({ path: path.join(OUT, "22_modell_mobil.png"), fullPage: true });
+  await mp.close();
+
+  // ------------------------------------------------------------------ KI-Modell-Karte
+  console.log("KI-Modell-Karte");
+  const mc = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  mc.on("pageerror", (e) => errors.push(String(e)));
+  mc.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+  await mc.goto(BASE + "?lang=de"); await mc.waitForTimeout(400);
+  await mc.evaluate(() => window.__mountModel({ room: "Wohn-/Esszimmer" }, 620, 380)); await mc.waitForTimeout(1500);
+  const mstate = await mc.evaluate(() => { const c = window.__model, sr = c.shadowRoot, cv = sr.querySelector("canvas.fx"), r = cv.getBoundingClientRect();
+    const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 3; i < d.length; i += 16) if (d[i] > 8) n++;
+    return { running: c._fx && c._fx.running, w: r.width, h: r.height, n, chips: sr.querySelectorAll(".mlegend .mp-chip").length, top: !!sr.querySelector(".topbar") && getComputedStyle(sr.querySelector(".topbar")).display !== "none" }; });
+  ok("Modell-Karte animiert und füllt die Kachel", mstate.running && Math.abs(mstate.w - 620) < 1 && Math.abs(mstate.h - 380) < 1 && mstate.n > 500, JSON.stringify(mstate));
+  ok("Modell-Karte: Legende, keine Leisten", mstate.chips === 5 && !mstate.top);
+  await mc.screenshot({ path: path.join(OUT, "23_modellkarte.png") });
+  await mc.evaluate(() => window.__mountModel({ room: "Büro", show_targets: false, legend: false }, 400, 300)); await mc.waitForTimeout(800);
+  ok("Modell-Karte: Raum + Optionen", (await mc.evaluate(() => window.__model._activeRoom)) === "r2" && !(await mc.evaluate(() => window.__model._mlayers.has("t"))) && (await mc.evaluate(() => window.__model.shadowRoot.querySelectorAll(".mlegend .mp-chip").length)) === 0);
+  await mc.evaluate(() => window.__mountEditor({ room: "r1" }, "zone-presence-model-card-editor")); await mc.waitForTimeout(400);
+  ok("Modell-Editor: Optionen", (await mc.locator('zone-presence-model-card-editor input[data-k="show_targets"]').count()) === 1 && (await mc.locator('zone-presence-model-card-editor [data-m="model_layers"]').count()) === 4);
+  await mc.locator('zone-presence-model-card-editor [data-m="model_layers"][value="u"]').uncheck(); await mc.waitForTimeout(150);
+  const mev = await mc.evaluate(() => window.__edEvents);
+  ok("Modell-Editor: Ebenen wählbar", JSON.stringify(mev[mev.length - 1].model_layers) === JSON.stringify(["g", "r", "h"]) || JSON.stringify(mev[mev.length - 1].model_layers) === JSON.stringify(["g", "r"]), JSON.stringify(mev));
+  await mc.evaluate(() => window.__mountRoom({ room: "r1", layers: ["zones", "persons", "dims"] }, 500, 320)); await mc.waitForTimeout(600);
+  const rl = await mc.evaluate(() => { const sr = window.__room.shadowRoot; const vis = (s) => { const e = sr.querySelector(s); return !!e && getComputedStyle(e).display !== "none"; }; return { sensors: vis("#sensors"), dims: sr.querySelectorAll("#dims .dim").length, persons: vis("#persons") }; });
+  ok("Raum-Karte: sichtbare Elemente per Konfiguration", !rl.sensors && rl.dims === 6 && rl.persons, JSON.stringify(rl));
+  await mc.close();
 
   ok("keine JS-Fehler", errors.length === 0, errors.join(" | "));
   console.log(`\n${pass} ok, ${fail} fehlgeschlagen`);
