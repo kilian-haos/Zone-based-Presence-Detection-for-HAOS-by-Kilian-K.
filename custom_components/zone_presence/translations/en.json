@@ -309,7 +309,7 @@
         },
         "positions": {
           "name": "Sensor positions",
-          "description": "Positions per sensor label if the calibration has none, e.g. {\"S1\": {\"pos\": [2.25, 0], \"rot\": 0}}."
+          "description": "Positions per sensor label if the calibration has none (see the example: sensor label → pos [x, y] and rot)."
         },
         "replace": {
           "name": "Replace",

@@ -309,7 +309,7 @@
         },
         "positions": {
           "name": "Sensor-Positionen",
-          "description": "Positionen je Sensor-Kürzel, falls in der Kalibrierung keine stehen, z. B. {\"S1\": {\"pos\": [2.25, 0], \"rot\": 0}}."
+          "description": "Positionen je Sensor-Kürzel, falls in der Kalibrierung keine stehen (siehe Beispiel: Sensor-Kürzel → pos [x, y] und rot)."
         },
         "replace": {
           "name": "Ersetzen",
