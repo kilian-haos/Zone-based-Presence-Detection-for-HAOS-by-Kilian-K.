@@ -257,6 +257,10 @@ Unter **Darstellung & Bearbeiten**: Panel an/aus, Panel-Titel (leer = Standardti
 - **Eine Person vor einem Möbelstück wird spät erkannt**: Kann ein zweiter Sensor nicht hinter das Möbel sehen, gilt das eventuell als „fehlender Zeuge“. Meist lernt das Modell die Stelle innerhalb weniger Tage als echte Aktivität.
 - **Diagnose**: Integration → ⋮ → *Diagnose herunterladen* (enthält Konfiguration, Tracks, Modell-Statistik).
 
+## Lizenz
+
+**PolyForm Strict License 1.0.0** – Quelltext einsehbar, aber nicht Open Source. Du darfst die Integration für private und andere nicht-kommerzielle Zwecke installieren und nutzen (z. B. in deinem Home Assistant über Marketplace, HACS oder manuell). Weitergeben, verkaufen oder veränderte bzw. darauf aufbauende Versionen veröffentlichen ist nicht erlaubt. Siehe [LICENSE](LICENSE) (Englisch).
+
 ## Entwicklung
 
 ```bash

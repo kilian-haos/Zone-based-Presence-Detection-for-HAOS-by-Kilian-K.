@@ -380,6 +380,10 @@ Under **Display & editing**: panel on/off, panel title (empty = default title), 
 - **A person in front of a piece of furniture is detected late**: if a second sensor cannot see behind the furniture, it may count as a "missing witness". Usually the model learns this spot as real activity within a few days.
 - **Diagnostics**: integration → ⋮ → *Download diagnostics* (contains configuration, tracks, model statistics).
 
+## Licence
+
+**PolyForm Strict License 1.0.0** – source-available, not open source. You may install and use this integration for personal and other non-commercial purposes (for example in your own Home Assistant via the Marketplace, HACS or manually). You may not redistribute it, sell it or publish modified versions or works based on it. See [LICENSE](LICENSE).
+
 ## Development
 
 ```bash

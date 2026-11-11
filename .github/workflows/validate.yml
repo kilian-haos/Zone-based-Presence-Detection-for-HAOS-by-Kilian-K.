@@ -1,0 +1,47 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS / Marketplace
+    runs-on: ubuntu-latest
+    # Die HACS-Prüfung zieht mit HACS in Home Assistant um (Marketplace, 2026.11) –
+    # ein Ausfall der Aktion soll die übrigen Prüfungen nicht rot färben.
+    continue-on-error: true
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          ignore: brands
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Engine-, Laufzeit- und Übersetzungs-Tests
+        run: |
+          pip install pyyaml
+          python -m unittest discover -s tests -p "test_*.py" -v
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Browser-Test der Karte
+        run: |
+          npm install --no-save playwright@1.47.2
+          npx playwright install --with-deps chromium
+          node tests/browser/run.js tests/browser/out
